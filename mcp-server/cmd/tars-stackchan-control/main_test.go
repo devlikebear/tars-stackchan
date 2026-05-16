@@ -61,6 +61,50 @@ func TestLoadConfigRejectsUnknownBridge(t *testing.T) {
 	}
 }
 
+func TestRunCommandTTSUsage(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := runCommand([]string{"tts"}, &stdout, &stderr); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "tts serve") {
+		t.Fatalf("stderr = %q, want tts serve usage", stderr.String())
+	}
+}
+
+func TestRunCommandTTSUnknownSubcommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := runCommand([]string{"tts", "bogus"}, &stdout, &stderr); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "unknown tts subcommand") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestRunCommandTTSServeMissingToken(t *testing.T) {
+	t.Setenv("TARS_STACKCHAN_TTS_TOKEN", "")
+	t.Setenv("TARS_STACKCHAN_TOKEN", "")
+	var stdout, stderr bytes.Buffer
+	// --port 0 binds an ephemeral port; serve must fail fast on missing token
+	// before it ever listens.
+	if code := runCommand([]string{"tts", "serve", "--port", "0"}, &stdout, &stderr); code != 1 {
+		t.Fatalf("exit = %d, want 1 (missing token)", code)
+	}
+	if !strings.Contains(stderr.String(), "TOKEN") {
+		t.Fatalf("stderr = %q, want token requirement", stderr.String())
+	}
+}
+
+func TestRunCommandTTSInstallNotImplemented(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := runCommand([]string{"tts", "install"}, &stdout, &stderr); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "not implemented yet") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
 func TestRunCommandVersion(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

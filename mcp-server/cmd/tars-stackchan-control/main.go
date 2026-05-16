@@ -42,6 +42,8 @@ func runCommand(args []string, stdout io.Writer, stderr io.Writer) int {
 		case "-h", "--help", "help":
 			printUsage(stdout)
 			return 0
+		case "tts":
+			return runTTS(args[1:], stderr)
 		default:
 			fmt.Fprintf(stderr, "unknown command %q\n\n", args[0])
 			printUsage(stderr)
@@ -117,13 +119,16 @@ func newBridge(mode, baseURL, token string) (stackchan.Bridge, error) {
 
 func printUsage(stdout io.Writer) {
 	fmt.Fprintf(stdout, `Usage:
-  %[1]s             run the local web control console
-  %[1]s --version   print version
+  %[1]s              run the local web control console
+  %[1]s tts serve    run the Gemini TTS relay (mDNS in Phase 2)
+  %[1]s --version     print version
 
 Environment:
   TARS_STACKCHAN_CONTROL_ADDR
   TARS_STACKCHAN_BRIDGE
   TARS_STACKCHAN_BASE_URL
   TARS_STACKCHAN_TOKEN
+  TARS_STACKCHAN_TTS_PORT, TARS_STACKCHAN_TTS_TOKEN
+  TARS_STACKCHAN_GEMINI_API_KEY / GEMINI_API_KEY
 `, binaryName)
 }
