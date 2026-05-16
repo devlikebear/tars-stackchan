@@ -42,6 +42,7 @@ Authorization: Bearer <token>
 ```
 
 The token is configured in `manifest.json` under `config.tarsStackchan.token`.
+For K151/CoreS3, the bridge uses the `head` LED group from the upstream platform config.
 
 ## Apply To Upstream Firmware
 
@@ -89,6 +90,8 @@ uv run --with esptool esptool ...
 ```
 
 If the upstream partition table changes, override with `TARS_STACKCHAN_MOD_OFFSET` and `TARS_STACKCHAN_MOD_SIZE`.
+
+For host deploys, `scripts/dev/prepare-firmware-upload.sh` also patches upstream `stackchan/manifest_local.json` for the CoreS3/K151 hardware. This is important because the pinned upstream default sets `driver.type` to `none`, which makes servo-backed head and motion requests return successfully without physical movement.
 
 If the local API is not reachable immediately after flashing, run smoke through the project helper:
 

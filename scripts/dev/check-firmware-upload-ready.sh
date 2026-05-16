@@ -5,6 +5,7 @@ repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 target_dir="${TARS_STACKCHAN_UPSTREAM_DIR:-$repo_root/.work/stack-chan}"
 firmware_dir="$target_dir/firmware"
 manifest="$firmware_dir/mods/tars_stackchan_bridge/manifest.json"
+host_manifest="$firmware_dir/stackchan/manifest_local.json"
 moddable_dir="${MODDABLE:-$HOME/.local/share/moddable}"
 ready=true
 
@@ -38,6 +39,28 @@ if [ -f "$manifest" ]; then
   fi
 else
   fail "firmware bridge manifest missing in prepared checkout"
+fi
+
+if [ -f "$host_manifest" ]; then
+  host_status="$(node - "$host_manifest" <<'NODE'
+const manifest = require(process.argv[2])
+const includes = manifest.include || []
+const driver = manifest.config?.driver || {}
+const led = manifest.config?.led || {}
+const ok = includes.includes('./manifest_m5stackchan_cores3.json') &&
+  driver.type === 'm5stackchan' &&
+  driver.servoPower?.type === 'py32' &&
+  led.head?.type === 'py32'
+process.stdout.write(ok ? 'ready' : `driver=${driver.type || 'missing'} ledHead=${led.head?.type || 'missing'}`)
+NODE
+)"
+  if [ "$host_status" = "ready" ]; then
+    pass "host manifest is patched for CoreS3/K151 servo and head LED"
+  else
+    fail "host manifest is not patched for CoreS3/K151 ($host_status); rerun prepare"
+  fi
+else
+  fail "host manifest missing in prepared checkout"
 fi
 
 if command -v npm >/dev/null 2>&1; then

@@ -17,7 +17,7 @@ const bridgeConfig = config.tarsStackchan ?? {}
 const TOKEN = bridgeConfig.token ?? ''
 const DEVICE = bridgeConfig.device ?? 'stackchan-k151'
 const FIRMWARE = bridgeConfig.firmware ?? 'tars-stackchan-dev'
-const LED_NAME = bridgeConfig.ledName ?? 'a'
+const LED_NAME = bridgeConfig.ledName ?? 'head'
 const PORT = bridgeConfig.port ?? 80
 let server
 

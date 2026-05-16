@@ -8,9 +8,12 @@ const modDir = dirname(fileURLToPath(import.meta.url))
 
 test('bridge mod reads runtime settings from the mod config module', async () => {
   const source = await readFile(join(modDir, 'mod.js'), 'utf8')
+  const manifest = JSON.parse(await readFile(join(modDir, 'manifest.json'), 'utf8'))
 
   assert.match(source, /from\s+['"]mod\/config['"]/)
   assert.doesNotMatch(source, /from\s+['"]mc\/config['"]/)
+  assert.equal(manifest.config.tarsStackchan.ledName, 'head')
+  assert.match(source, /bridgeConfig\.ledName \?\? ['"]head['"]/)
 })
 
 test('bridge mod owns launch so hardware setup UI touch probing is bypassed', async () => {

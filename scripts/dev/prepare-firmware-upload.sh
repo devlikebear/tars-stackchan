@@ -35,6 +35,7 @@ rm -rf "$target_dir/firmware/mods/tars_stackchan_bridge"
 cp -R "$overlay_dir" "$target_dir/firmware/mods/tars_stackchan_bridge"
 
 manifest="$target_dir/firmware/mods/tars_stackchan_bridge/manifest.json"
+host_manifest="$target_dir/firmware/stackchan/manifest_local.json"
 
 if [ -n "$token" ]; then
   node - "$manifest" "$token" <<'NODE'
@@ -48,6 +49,49 @@ fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
 NODE
 else
   echo "warning: TARS_STACKCHAN_TOKEN is empty; manifest still contains replace-with-local-token" >&2
+fi
+
+if [ -f "$host_manifest" ]; then
+  node - "$host_manifest" "$target" <<'NODE'
+const fs = require('fs')
+const [manifestPath, target] = process.argv.slice(2)
+const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+manifest.config ??= {}
+
+if (target === 'esp32/m5stack_cores3') {
+  manifest.include = ['./manifest_m5stackchan_cores3.json']
+  manifest.config.driver = {
+    type: 'm5stackchan',
+    panId: 1,
+    tiltId: 2,
+    yawZeroPosition: 460,
+    pitchZeroPosition: 620,
+    serial: {
+      transmit: 6,
+      receive: 7,
+      port: 1,
+      baud: 1000000,
+    },
+    servoPower: {
+      type: 'py32',
+      pin: 0,
+      address: 111,
+    },
+  }
+  manifest.config.led ??= {}
+  manifest.config.led.head = {
+    type: 'py32',
+    length: 12,
+    ledPin: 13,
+    address: 111,
+  }
+}
+
+fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+NODE
+  echo "ready: patched host manifest for $target"
+else
+  echo "warning: host manifest not found: $host_manifest" >&2
 fi
 
 cat <<EOF

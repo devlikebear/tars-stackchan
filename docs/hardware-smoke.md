@@ -66,6 +66,7 @@ scripts/dev/check-firmware-upload-ready.sh
 
 The bridge MOD must avoid module names that collide with host firmware modules.
 The Stack-chan host already ships `http-server-service`; the bridge maps its retained service as `tars-http-server-service` and imports that name so the MOD does not accidentally load the host copy.
+For K151/CoreS3, the host `stackchan/manifest_local.json` must be patched away from the upstream default `driver.type: none`; otherwise head and motion endpoints can return success without physical servo movement. The prepare helper patches this to the `m5stackchan` driver and the `head` LED group.
 If the device does not answer HTTP immediately after direct flash, a USB hard reset can bring Wi-Fi and the bridge API back without reflashing.
 
 ## Smoke Commands
