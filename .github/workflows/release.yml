@@ -28,9 +28,6 @@ jobs:
         with:
           node-version: 22
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v5
-
       - name: Test Go MCP server
         working-directory: mcp-server
         run: go test ./...
@@ -40,7 +37,7 @@ jobs:
           scripts/test/firmware-bridge-contract.sh
           scripts/test/firmware-upload-script-contract.sh
           scripts/test/hardware-smoke-contract.sh
-          scripts/test/tts-remote-server-contract.sh
+          scripts/test/tts-relay-go-contract.sh
           scripts/test/release-config-contract.sh
 
       - name: Release binaries and Homebrew formula

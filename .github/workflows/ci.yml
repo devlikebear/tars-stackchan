@@ -27,9 +27,6 @@ jobs:
         with:
           node-version: 22
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v5
-
       - name: Test Go MCP server
         working-directory: mcp-server
         run: go test ./...
@@ -42,9 +39,6 @@ jobs:
 
       - name: Test hardware smoke script contract
         run: scripts/test/hardware-smoke-contract.sh
-
-      - name: Test TTS relay contract
-        run: scripts/test/tts-remote-server-contract.sh
 
       - name: Test Go TTS relay contract
         run: scripts/test/tts-relay-go-contract.sh

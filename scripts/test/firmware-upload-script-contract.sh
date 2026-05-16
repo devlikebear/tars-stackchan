@@ -5,9 +5,6 @@ repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 upload_script="$repo_root/scripts/dev/upload-firmware.sh"
 prepare_script="$repo_root/scripts/dev/prepare-firmware-upload.sh"
 ready_script="$repo_root/scripts/dev/check-firmware-upload-ready.sh"
-tts_server="$repo_root/scripts/dev/tts-remote-server.py"
-tts_runner="$repo_root/scripts/dev/run-local-tts.sh"
-tts_contract="$repo_root/scripts/test/tts-remote-server-contract.sh"
 
 assert_contains() {
   file="$1"
@@ -58,17 +55,7 @@ assert_contains "$ready_script" "scripts/dev/upload-firmware.sh"
 assert_contains "$ready_script" "firmware bridge token and speech TTS token are configured"
 assert_contains "$ready_script" "host manifest is patched for CoreS3/K151 servo, head LED, and remote TTS"
 assert_contains "$ready_script" "tts.volume <= 0.2"
-assert_contains "$tts_server" "gemini-3.1-flash-tts-preview"
-assert_contains "$tts_server" "x-goog-api-key"
-assert_contains "$tts_server" "TARS_STACKCHAN_TTS_TOKEN"
-assert_contains "$tts_server" "hmac.compare_digest"
-assert_contains "$tts_server" "redact_path"
-assert_contains "$tts_server" "responseModalities"
-assert_contains "$tts_server" "prebuiltVoiceConfig"
-assert_contains "$tts_server" "wave.open"
-assert_contains "$tts_runner" "TARS_STACKCHAN_TTS_TOKEN"
-assert_contains "$tts_runner" "TARS_STACKCHAN_TOKEN"
-assert_contains "$tts_runner" "gemini-3.1-flash-tts-preview"
-assert_contains "$tts_runner" "TARS_STACKCHAN_TTS_VOICE:-Kore"
-assert_contains "$tts_runner" "exec env TARS_STACKCHAN_TTS_TOKEN="
-assert_contains "$tts_contract" "uv run python"
+# The Gemini TTS relay is now the Go binary; its behavior is covered by
+# scripts/test/tts-relay-go-contract.sh and mcp-server/internal/tts tests.
+# The Python relay (tts-remote-server.py / run-local-tts.sh) was removed in
+# Phase 4 of the dynamic TTS discovery epic.

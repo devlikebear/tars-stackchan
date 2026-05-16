@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/devlikebear/tars-stackchan/mcp-server/internal/bridge/mock"
 	"github.com/devlikebear/tars-stackchan/mcp-server/internal/buildinfo"
 	"github.com/devlikebear/tars-stackchan/mcp-server/internal/stackchan"
+	"github.com/devlikebear/tars-stackchan/mcp-server/internal/tts"
 )
 
 const binaryName = "tars-stackchan-mcp"
@@ -173,6 +175,7 @@ func runDoctorCommand(args []string, stdout io.Writer, stderr io.Writer) int {
 	flags := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	skipDevice := flags.Bool("skip-device", false, "skip the HTTP status probe")
+	skipTTS := flags.Bool("skip-tts", false, "skip the TTS speech-path probes")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -230,10 +233,66 @@ func runDoctorCommand(args []string, stdout io.Writer, stderr io.Writer) int {
 		}
 	}
 
+	if !*skipTTS {
+		if !runTTSDoctor(stdout) {
+			ok = false
+		}
+	}
+
 	if !ok {
 		return 1
 	}
 	return 0
+}
+
+// runTTSDoctor diagnoses the speech path end-to-end (token, Gemini key, relay
+// health, mDNS resolution) so a silent-audio regression is caught before the
+// user ever asks Stack-chan to speak. It reuses internal/tts probes so the
+// checks never drift from `tars-stackchan-control tts status`.
+func runTTSDoctor(stdout io.Writer) bool {
+	ok := true
+
+	if tts.ResolveToken("") == "" {
+		fmt.Fprintln(stdout, "tts_token: missing TARS_STACKCHAN_TTS_TOKEN / TARS_STACKCHAN_TOKEN")
+		ok = false
+	} else {
+		fmt.Fprintln(stdout, "tts_token: set")
+	}
+
+	if tts.ResolveAPIKey("") == "" {
+		fmt.Fprintln(stdout, "gemini_key: missing GEMINI_API_KEY / TARS_STACKCHAN_GEMINI_API_KEY")
+		ok = false
+	} else {
+		fmt.Fprintln(stdout, "gemini_key: set")
+	}
+
+	port := 18080
+	if v := strings.TrimSpace(os.Getenv("TARS_STACKCHAN_TTS_PORT")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			port = n
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	if err := tts.ProbeHealth(ctx, baseURL); err != nil {
+		fmt.Fprintf(stdout, "tts_relay_health: down (%v)\n", err)
+		fmt.Fprintln(stdout, "hint: start the relay with 'brew services start tars-stackchan'")
+		ok = false
+	} else {
+		fmt.Fprintf(stdout, "tts_relay_health: ok (%s/health)\n", baseURL)
+	}
+
+	if ip, err := tts.ProbeMDNS(ctx, tts.DefaultTTSHostname); err != nil {
+		// mDNS failure is not fatal: the IP-override bake is a valid fallback.
+		fmt.Fprintf(stdout, "tts_mdns: unresolved (%v)\n", err)
+		fmt.Fprintf(stdout, "hint: %s did not resolve; re-flash firmware with TARS_STACKCHAN_TTS_HOST=<mac-ip> as a fixed fallback\n", tts.DefaultTTSHostname)
+	} else {
+		fmt.Fprintf(stdout, "tts_mdns: ok (%s -> %s)\n", tts.DefaultTTSHostname, ip)
+	}
+
+	return ok
 }
 
 // deviceProbeHint returns an actionable hint when the device status probe

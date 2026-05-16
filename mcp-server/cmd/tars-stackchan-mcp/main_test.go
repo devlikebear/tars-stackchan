@@ -152,7 +152,7 @@ func TestDoctorMockBridgeWarnsNotRealHardware(t *testing.T) {
 	t.Setenv("TARS_STACKCHAN_TOKEN", "")
 
 	var stdout, stderr bytes.Buffer
-	if code := runCommand([]string{"doctor", "--skip-device"}, &stdout, &stderr); code != 0 {
+	if code := runCommand([]string{"doctor", "--skip-device", "--skip-tts"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit code = %d, stderr = %s", code, stderr.String())
 	}
 	out := stdout.String()
@@ -170,7 +170,7 @@ func TestDoctorHTTPTokenNote(t *testing.T) {
 	t.Setenv("TARS_STACKCHAN_TOKEN", "secret")
 
 	var stdout, stderr bytes.Buffer
-	if code := runCommand([]string{"doctor", "--skip-device"}, &stdout, &stderr); code != 0 {
+	if code := runCommand([]string{"doctor", "--skip-device", "--skip-tts"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit code = %d, stderr = %s", code, stderr.String())
 	}
 	out := stdout.String()
@@ -179,5 +179,66 @@ func TestDoctorHTTPTokenNote(t *testing.T) {
 	}
 	if !strings.Contains(out, "fails mutating calls with HTTP 401") {
 		t.Fatalf("doctor output missing firmware-token note:\n%s", out)
+	}
+}
+
+func TestDoctorTTSMissingTokenAndKey(t *testing.T) {
+	t.Setenv("TARS_STACKCHAN_BRIDGE", "mock")
+	t.Setenv("TARS_STACKCHAN_TTS_TOKEN", "")
+	t.Setenv("TARS_STACKCHAN_TOKEN", "")
+	t.Setenv("TARS_STACKCHAN_GEMINI_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+	// Unbindable port so the relay health probe fails fast and deterministically.
+	t.Setenv("TARS_STACKCHAN_TTS_PORT", "1")
+
+	var stdout, stderr bytes.Buffer
+	code := runCommand([]string{"doctor", "--skip-device"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1 (tts not ready), stdout=%s", code, stdout.String())
+	}
+	out := stdout.String()
+	for _, want := range []string{
+		"tts_token: missing",
+		"gemini_key: missing",
+		"tts_relay_health: down",
+		"brew services start tars-stackchan",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("doctor TTS output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestDoctorTTSTokenAndKeySetRelayDown(t *testing.T) {
+	t.Setenv("TARS_STACKCHAN_BRIDGE", "mock")
+	t.Setenv("TARS_STACKCHAN_TTS_TOKEN", "tok")
+	t.Setenv("TARS_STACKCHAN_GEMINI_API_KEY", "key")
+	t.Setenv("TARS_STACKCHAN_TTS_PORT", "1")
+
+	var stdout, stderr bytes.Buffer
+	code := runCommand([]string{"doctor", "--skip-device"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1 (relay down), stdout=%s", code, stdout.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "tts_token: set") || !strings.Contains(out, "gemini_key: set") {
+		t.Fatalf("doctor should report token/key set:\n%s", out)
+	}
+	if !strings.Contains(out, "tts_relay_health: down") {
+		t.Fatalf("doctor should report relay down:\n%s", out)
+	}
+}
+
+func TestDoctorSkipTTS(t *testing.T) {
+	t.Setenv("TARS_STACKCHAN_BRIDGE", "mock")
+	t.Setenv("TARS_STACKCHAN_TTS_TOKEN", "")
+	t.Setenv("TARS_STACKCHAN_TOKEN", "")
+
+	var stdout, stderr bytes.Buffer
+	if code := runCommand([]string{"doctor", "--skip-device", "--skip-tts"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit = %d, want 0 with --skip-tts, stderr=%s", code, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "tts_relay_health") {
+		t.Fatalf("--skip-tts should suppress TTS probes:\n%s", stdout.String())
 	}
 }

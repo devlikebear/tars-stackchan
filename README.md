@@ -187,20 +187,28 @@ TARS_STACKCHAN_CONTROL_ADDR=127.0.0.1:8790 go run ./cmd/tars-stackchan-control
 
 ## Speech
 
-Speech uses Stack-chan remote TTS pointed at the local Gemini relay:
+Speech uses Stack-chan remote TTS pointed at the local Gemini relay. The relay
+is the Go binary and runs as a Homebrew service; it advertises
+`tars-stackchan-tts.local` over mDNS so the device finds it without a re-flash
+when the Mac's DHCP address changes:
 
 ```bash
 export GEMINI_API_KEY="<google-ai-studio-api-key>"
-scripts/dev/run-local-tts.sh
+export TARS_STACKCHAN_TOKEN="<local-token>"
+brew services start tars-stackchan
+# dev alternative (foreground): tars-stackchan-control tts serve
+tars-stackchan-control tts status   # relay + mDNS health
 ```
 
 Defaults:
 
 - `TARS_STACKCHAN_TTS_MODEL=gemini-3.1-flash-tts-preview`
 - `TARS_STACKCHAN_TTS_VOICE=Kore`
-- `TARS_STACKCHAN_TTS_VOLUME=0.15`
+- `TARS_STACKCHAN_TTS_PORT=18080`
 
-The relay requires `TARS_STACKCHAN_TTS_TOKEN` or `TARS_STACKCHAN_TOKEN` and redacts tokens from logs.
+The relay requires `TARS_STACKCHAN_TTS_TOKEN` or `TARS_STACKCHAN_TOKEN` and
+redacts tokens from logs. If mDNS does not resolve on your network, re-flash
+with `TARS_STACKCHAN_TTS_HOST=<mac-ip>`. Verify with `tars-stackchan-mcp doctor`.
 
 ## Verification
 
@@ -211,7 +219,7 @@ cd mcp-server && go test ./...
 scripts/test/firmware-bridge-contract.sh
 scripts/test/firmware-upload-script-contract.sh
 scripts/test/hardware-smoke-contract.sh
-scripts/test/tts-remote-server-contract.sh
+scripts/test/tts-relay-go-contract.sh
 scripts/test/release-config-contract.sh
 ```
 

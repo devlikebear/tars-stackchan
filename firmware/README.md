@@ -127,7 +127,7 @@ brew services start tars-stackchan      # background service, starts on login
 
 If mDNS does not resolve on your network, bake a fixed IP fallback by
 preparing/uploading firmware with `TARS_STACKCHAN_TTS_HOST=<mac-ip>`.
-(`scripts/dev/run-local-tts.sh` stays as a legacy dev wrapper until Phase 4.)
+Verify the speech path with `tars-stackchan-mcp doctor`.
 
 Defaults:
 
@@ -138,7 +138,7 @@ Defaults:
 
 The relay calls the Gemini REST TTS endpoint, wraps the returned 24 kHz mono PCM as WAV, and serves it at `/api/tts?token=...&text=...`.
 
-The relay requires a token so other LAN clients cannot spend the Gemini quota. `scripts/dev/run-local-tts.sh` uses the first available value from:
+The relay requires a token so other LAN clients cannot spend the Gemini quota. `tars-stackchan-control tts serve` uses the first available value from:
 
 - `TARS_STACKCHAN_TTS_TOKEN`
 - `TARS_STACKCHAN_TOKEN`
@@ -176,7 +176,7 @@ Local contract tests:
 scripts/test/firmware-bridge-contract.sh
 scripts/test/firmware-upload-script-contract.sh
 scripts/test/hardware-smoke-contract.sh
-scripts/test/tts-remote-server-contract.sh
+scripts/test/tts-relay-go-contract.sh
 ```
 
 Hardware smoke:

@@ -84,9 +84,12 @@ tars-stackchan-control tts status        # relay + mDNS health
 The prepare helper bakes `config.tts.host = tars-stackchan-tts.local` by
 default. On networks where mDNS does not resolve, bake a fixed IP fallback
 instead: re-run the prepare/upload with `TARS_STACKCHAN_TTS_HOST=<mac-ip>`.
-(`scripts/dev/run-local-tts.sh` remains as a legacy dev wrapper until Phase 4.)
+Run `tars-stackchan-mcp doctor` to verify the speech path end-to-end.
 
-The TTS relay requires the local Stack-chan token. The runner uses `TARS_STACKCHAN_TTS_TOKEN`, `TARS_STACKCHAN_TOKEN`, or the prepared MOD manifest token, and the prepare helper patches the firmware speech path to call `/api/tts?token=...&text=...`. The default host playback volume is `0.15` for close-range listening.
+The TTS relay requires the local Stack-chan token (`TARS_STACKCHAN_TTS_TOKEN`
+or `TARS_STACKCHAN_TOKEN`), and the prepare helper patches the firmware speech
+path to call `/api/tts?token=...&text=...`. The default host playback volume is
+`0.15` for close-range listening.
 
 If the device does not answer HTTP immediately after direct flash, a USB hard reset can bring Wi-Fi and the bridge API back without reflashing.
 
