@@ -13,7 +13,7 @@ AI Agent / TARS / Claude
           -> expression / head servo / LED / motion
 ```
 
-Phase 1 contains a Go MCP server with a mock bridge, so it can be tested without hardware or firmware changes.
+The server supports a mock bridge for local development and an HTTP bridge for real firmware control.
 
 ## Current Scope
 
@@ -43,6 +43,25 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | go run ./cmd/ta
 
 The default bridge is the in-memory mock bridge. It reports a connected `stackchan-k151` device and records expression, head, LED, and motion requests locally.
 
+## Bridge Configuration
+
+Mock mode is the default:
+
+```bash
+TARS_STACKCHAN_BRIDGE=mock go run ./cmd/tars-stackchan-mcp
+```
+
+HTTP mode calls the firmware-local `/v1` API:
+
+```bash
+TARS_STACKCHAN_BRIDGE=http \
+TARS_STACKCHAN_BASE_URL=http://stackchan.local \
+TARS_STACKCHAN_TOKEN="$TARS_STACKCHAN_TOKEN" \
+go run ./cmd/tars-stackchan-mcp
+```
+
+The shared protocol is documented in [docs/protocol/local-control-api.md](docs/protocol/local-control-api.md).
+
 ## Example Tool Call
 
 ```bash
@@ -71,6 +90,6 @@ tars-stackchan/
   scripts/
 ```
 
-## Next Phase
+## Current Phase
 
-Phase 2 will add the real HTTP bridge and the shared local firmware API protocol document. Firmware work starts after that protocol is locked.
+Phase 2 adds the MCP server-side HTTP bridge and protocol contract. Firmware work starts after this contract is locked.

@@ -3,3 +3,7 @@ mcp:
     tars-stackchan:
       command: /absolute/path/to/tars-stackchan/mcp-server/tars-stackchan-mcp
       args: []
+      env:
+        TARS_STACKCHAN_BRIDGE: http
+        TARS_STACKCHAN_BASE_URL: http://stackchan.local
+        TARS_STACKCHAN_TOKEN: replace-with-local-token
