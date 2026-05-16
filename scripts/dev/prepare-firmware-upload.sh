@@ -14,13 +14,15 @@ tts_host="${TARS_STACKCHAN_TTS_HOST:-}"
 tts_port="${TARS_STACKCHAN_TTS_PORT:-18080}"
 tts_volume="${TARS_STACKCHAN_TTS_VOLUME:-0.15}"
 
+# Default to the project-stable mDNS hostname instead of a raw, DHCP-volatile
+# IP. The Go relay (tars-stackchan-control tts serve) advertises this name via
+# dns-sd, so the device resolves the current relay IP at boot without a
+# re-flash. Keep this literal in sync with tts.DefaultTTSHostname
+# (mcp-server/internal/tts/mdns.go); firmware-upload-script-contract.sh asserts
+# it. Setting TARS_STACKCHAN_TTS_HOST=<ip-or-host> still wins as a fallback for
+# networks where mDNS does not resolve.
 if [ -z "$tts_host" ]; then
-  if command -v ipconfig >/dev/null 2>&1; then
-    tts_host="$(ipconfig getifaddr en0 2>/dev/null || true)"
-  fi
-  if [ -z "$tts_host" ]; then
-    tts_host="$(hostname -I 2>/dev/null | awk '{ print $1 }' || true)"
-  fi
+  tts_host="tars-stackchan-tts.local"
 fi
 
 if ! command -v git >/dev/null 2>&1; then
@@ -112,11 +114,11 @@ if (target === 'esp32/m5stack_cores3') {
 fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
 NODE
   echo "ready: patched host manifest for $target"
-  if [ -n "$tts_host" ]; then
-    echo "ready: patched host TTS remote server to $tts_host:$tts_port at volume $tts_volume"
-  else
-    echo "warning: TARS_STACKCHAN_TTS_HOST is empty; speech requires an external TTS server" >&2
-  fi
+  echo "ready: patched host TTS remote server to $tts_host:$tts_port at volume $tts_volume"
+  case "$tts_host" in
+    *.local)
+      echo "note: $tts_host is an mDNS name; the relay must advertise it (brew services start tars-stackchan / tars-stackchan-control tts serve). Set TARS_STACKCHAN_TTS_HOST=<ip> to bake a fixed IP fallback." ;;
+  esac
 else
   echo "warning: host manifest not found: $host_manifest" >&2
 fi

@@ -68,14 +68,22 @@ scripts/dev/check-firmware-upload-ready.sh
 The bridge MOD must avoid module names that collide with host firmware modules.
 The Stack-chan host already ships `http-server-service`; the bridge maps its retained service as `tars-http-server-service` and imports that name so the MOD does not accidentally load the host copy.
 For K151/CoreS3, the host `stackchan/manifest_local.json` must be patched away from the upstream default `driver.type: none`; otherwise head and motion endpoints can return success without physical servo movement. The prepare helper patches this to the `m5stackchan` driver, the `head` LED group, and a remote TTS server endpoint.
-For local speech testing, start `scripts/dev/run-local-tts.sh` before using `stackchan_speak`. The relay uses Gemini 3.1 Flash TTS by default:
+For speech, start the Gemini TTS relay before using `stackchan_speak`. The
+relay is the Go binary (`tars-stackchan-control tts serve`); it advertises
+`tars-stackchan-tts.local` over mDNS so the device finds the current relay IP
+without a re-flash:
 
 ```bash
 export GEMINI_API_KEY="<google-ai-studio-api-key>"
+export TARS_STACKCHAN_TOKEN="<local-token>"
 export TARS_STACKCHAN_TTS_VOICE=Kore
-export TARS_STACKCHAN_TTS_VOLUME=0.15
-scripts/dev/run-local-tts.sh
+tars-stackchan-control tts serve
 ```
+
+The prepare helper bakes `config.tts.host = tars-stackchan-tts.local` by
+default. On networks where mDNS does not resolve, bake a fixed IP fallback
+instead: re-run the prepare/upload with `TARS_STACKCHAN_TTS_HOST=<mac-ip>`.
+(`scripts/dev/run-local-tts.sh` remains as a legacy dev wrapper until Phase 4.)
 
 The TTS relay requires the local Stack-chan token. The runner uses `TARS_STACKCHAN_TTS_TOKEN`, `TARS_STACKCHAN_TOKEN`, or the prepared MOD manifest token, and the prepare helper patches the firmware speech path to call `/api/tts?token=...&text=...`. The default host playback volume is `0.15` for close-range listening.
 
