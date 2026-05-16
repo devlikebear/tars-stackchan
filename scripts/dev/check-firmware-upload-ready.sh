@@ -31,11 +31,24 @@ else
 fi
 
 if [ -f "$manifest" ]; then
-  token_status="$(node -e "const m=require(process.argv[1]); const t=m.config?.tarsStackchan?.token; console.log(t && t !== 'replace-with-local-token' ? 'configured' : 'placeholder')" "$manifest")"
+  token_status="$(node - "$manifest" <<'NODE'
+const manifest = require(process.argv[2])
+const config = manifest.config?.tarsStackchan || {}
+const token = config.token || ''
+const prefix = config.speechPathPrefix || ''
+if (!token || token === 'replace-with-local-token') {
+  process.stdout.write('placeholder')
+} else if (!prefix.includes('/api/tts?token=') || !prefix.includes('&text=')) {
+  process.stdout.write('speech-prefix-missing-token')
+} else {
+  process.stdout.write('configured')
+}
+NODE
+)"
   if [ "$token_status" = "configured" ]; then
-    pass "firmware bridge token is configured in prepared manifest"
+    pass "firmware bridge token and speech TTS token are configured in prepared manifest"
   else
-    fail "firmware bridge token is still placeholder; rerun prepare script with TARS_STACKCHAN_TOKEN"
+    fail "firmware bridge token is not ready ($token_status); rerun prepare script with TARS_STACKCHAN_TOKEN"
   fi
 else
   fail "firmware bridge manifest missing in prepared checkout"
@@ -54,8 +67,10 @@ const ok = includes.includes('./manifest_m5stackchan_cores3.json') &&
   led.head?.type === 'py32' &&
   tts.type === 'remote' &&
   typeof tts.host === 'string' &&
-  typeof tts.port === 'number'
-process.stdout.write(ok ? 'ready' : `driver=${driver.type || 'missing'} ledHead=${led.head?.type || 'missing'} tts=${tts.type || 'missing'}:${tts.host || 'missing'}:${tts.port || 'missing'}`)
+  typeof tts.port === 'number' &&
+  typeof tts.volume === 'number' &&
+  tts.volume <= 0.2
+process.stdout.write(ok ? 'ready' : `driver=${driver.type || 'missing'} ledHead=${led.head?.type || 'missing'} tts=${tts.type || 'missing'}:${tts.host || 'missing'}:${tts.port || 'missing'} volume=${tts.volume ?? 'missing'}`)
 NODE
 )"
   if [ "$host_status" = "ready" ]; then

@@ -83,8 +83,10 @@ test('motion request allowlist normalizes names', () => {
 
 test('speech request requires bounded text', () => {
   assert.deepEqual(normalizeSpeechRequest({ text: 'hello stack-chan' }), { text: 'hello stack-chan' })
+  assert.deepEqual(normalizeSpeechRequest({ text: 'quiet hello', volume: 0.15 }), { text: 'quiet hello', volume: 0.15 })
   assert.throws(() => normalizeSpeechRequest({ text: '' }), /text is required/)
   assert.throws(() => normalizeSpeechRequest({ text: 'x'.repeat(241) }), /text must be 240 characters or fewer/)
+  assert.throws(() => normalizeSpeechRequest({ text: 'too loud', volume: 1.1 }), /volume/)
 })
 
 test('action response keeps the firmware response shape aligned with the MCP bridge', () => {

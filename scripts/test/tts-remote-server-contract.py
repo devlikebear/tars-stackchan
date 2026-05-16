@@ -142,6 +142,16 @@ class GeminiTTSServerContract(unittest.TestCase):
                     sample_rate=24000,
                 )
 
+    def test_requires_tts_token_and_redacts_it_from_logs(self) -> None:
+        self.assertTrue(self.module.is_authorized({"token": ["secret-token"]}, "secret-token"))
+        self.assertFalse(self.module.is_authorized({}, "secret-token"))
+        self.assertFalse(self.module.is_authorized({"token": ["wrong-token"]}, "secret-token"))
+        self.assertFalse(self.module.is_authorized({"token": ["secret-token"]}, ""))
+        self.assertEqual(
+            self.module.redact_path("/api/tts?token=secret-token&text=hello"),
+            "/api/tts?token=%3Credacted%3E&text=hello",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

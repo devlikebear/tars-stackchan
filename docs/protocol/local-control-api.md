@@ -160,11 +160,12 @@ Request:
 
 ```json
 {
-  "text": "hello stack-chan"
+  "text": "hello stack-chan",
+  "volume": 0.15
 }
 ```
 
-`text` is required and must be 240 characters or fewer. Firmware sends it through Stack-chan's configured `robot.say(...)` speech voice.
+`text` is required and must be 240 characters or fewer. `volume` is optional and normalized to `0.0..1.0`; when omitted, firmware uses Stack-chan's configured TTS volume. Firmware sends both values through Stack-chan's configured `robot.say(...)` speech voice.
 
 ## Action Response
 

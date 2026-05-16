@@ -119,7 +119,14 @@ export function normalizeSpeechRequest(payload) {
   if (text.length > MAX_SPEECH_TEXT_LENGTH) {
     throw new Error(`text must be ${MAX_SPEECH_TEXT_LENGTH} characters or fewer`)
   }
-  return { text }
+  if (request.volume === undefined) {
+    return { text }
+  }
+  const volume = numberField(request.volume, 'volume')
+  if (volume < 0 || volume > 1) {
+    throw new Error('volume must be between 0.0 and 1.0')
+  }
+  return { text, volume }
 }
 
 export function actionResponse(action, state = undefined) {

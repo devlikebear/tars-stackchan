@@ -73,8 +73,11 @@ For local speech testing, start `scripts/dev/run-local-tts.sh` before using `sta
 ```bash
 export GEMINI_API_KEY="<google-ai-studio-api-key>"
 export TARS_STACKCHAN_TTS_VOICE=Kore
+export TARS_STACKCHAN_TTS_VOLUME=0.15
 scripts/dev/run-local-tts.sh
 ```
+
+The TTS relay requires the local Stack-chan token. The runner uses `TARS_STACKCHAN_TTS_TOKEN`, `TARS_STACKCHAN_TOKEN`, or the prepared MOD manifest token, and the prepare helper patches the firmware speech path to call `/api/tts?token=...&text=...`. The default host playback volume is `0.15` for close-range listening.
 
 If the device does not answer HTTP immediately after direct flash, a USB hard reset can bring Wi-Fi and the bridge API back without reflashing.
 
@@ -101,7 +104,7 @@ When `scripts/dev/upload-firmware.sh smoke` fails to reach the local API and a U
 - [x] `stackchan_move_head` moves head and clamps unsafe tilt.
 - [x] `stackchan_set_led` changes LED.
 - [x] `stackchan_run_motion` runs `nod`.
-- [x] `stackchan_speak` sends a short speech request.
+- [x] `stackchan_speak` sends a short speech request with low volume.
 
 ## Results
 
@@ -127,7 +130,7 @@ TARS_STACKCHAN_BASE_URL=http://192.168.219.113 scripts/dev/upload-firmware.sh sm
 
 The smoke covered raw HTTP requests and MCP tool calls for status, expression, head movement, LED, motion, and speech. The unsafe `tilt_deg=120` input was clamped to `tilt_deg=85` by the firmware response.
 
-The speech endpoint returns as soon as the request is accepted. It starts `robot.say(...)` in the background so HTTP and MCP smoke tests do not block on TTS generation or playback.
+The speech endpoint returns as soon as the request is accepted. It starts `robot.say(..., volume)` in the background so HTTP and MCP smoke tests do not block on TTS generation or playback.
 
 Missing and invalid bearer tokens were rejected with HTTP 401:
 

@@ -113,8 +113,8 @@ function onRobotCreated(robot) {
 
   server.post('/v1/speech', withAuth(async (c) => {
     const request = normalizeSpeechRequest(await readJSON(c))
-    startSpeech(robot, speechUtterance(request.text))
-    return c.json(actionResponse('speak', { text: request.text }))
+    startSpeech(robot, speechUtterance(request.text), request.volume)
+    return c.json(actionResponse('speak', { text: request.text, volume: request.volume }))
   }))
 
   trace(`[tars-stackchan] local control API listening${PORT ? ` on port ${PORT}` : ''}\n`)
@@ -151,8 +151,8 @@ async function runMotion(robot, name) {
   }
 }
 
-function startSpeech(robot, text) {
-  const speech = robot.say(text)
+function startSpeech(robot, text, volume = undefined) {
+  const speech = robot.say(text, volume)
   if (speech && typeof speech.catch === 'function') {
     speech.catch((error) => {
       const message = error?.message ?? String(error)

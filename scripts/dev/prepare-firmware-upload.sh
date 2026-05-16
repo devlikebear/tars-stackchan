@@ -12,6 +12,7 @@ token="${TARS_STACKCHAN_TOKEN:-}"
 target="${TARS_STACKCHAN_TARGET:-esp32/m5stack_cores3}"
 tts_host="${TARS_STACKCHAN_TTS_HOST:-}"
 tts_port="${TARS_STACKCHAN_TTS_PORT:-18080}"
+tts_volume="${TARS_STACKCHAN_TTS_VOLUME:-0.15}"
 
 if [ -z "$tts_host" ]; then
   if command -v ipconfig >/dev/null 2>&1; then
@@ -56,6 +57,7 @@ const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 manifest.config ??= {}
 manifest.config.tarsStackchan ??= {}
 manifest.config.tarsStackchan.token = token
+manifest.config.tarsStackchan.speechPathPrefix = `/api/tts?token=${encodeURIComponent(token)}&text=`
 fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
 NODE
 else
@@ -63,9 +65,9 @@ else
 fi
 
 if [ -f "$host_manifest" ]; then
-  node - "$host_manifest" "$target" "$tts_host" "$tts_port" <<'NODE'
+  node - "$host_manifest" "$target" "$tts_host" "$tts_port" "$tts_volume" <<'NODE'
 const fs = require('fs')
-const [manifestPath, target, ttsHost, ttsPort] = process.argv.slice(2)
+const [manifestPath, target, ttsHost, ttsPort, ttsVolume] = process.argv.slice(2)
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 manifest.config ??= {}
 
@@ -102,7 +104,7 @@ if (target === 'esp32/m5stack_cores3') {
       host: ttsHost,
       port: Number(ttsPort),
       sampleRate: 24000,
-      volume: 0.8,
+      volume: Number(ttsVolume),
     }
   }
 }
@@ -111,7 +113,7 @@ fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
 NODE
   echo "ready: patched host manifest for $target"
   if [ -n "$tts_host" ]; then
-    echo "ready: patched host TTS remote server to $tts_host:$tts_port"
+    echo "ready: patched host TTS remote server to $tts_host:$tts_port at volume $tts_volume"
   else
     echo "warning: TARS_STACKCHAN_TTS_HOST is empty; speech requires an external TTS server" >&2
   fi

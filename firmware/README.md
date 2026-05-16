@@ -101,6 +101,8 @@ scripts/dev/run-local-tts.sh
 ```
 
 The helper runs a small `uv`-launched HTTP server that calls the Gemini REST TTS endpoint, wraps the returned 24 kHz mono PCM as WAV, and serves it at `/api/tts?text=...`. Defaults are `TARS_STACKCHAN_TTS_MODEL=gemini-3.1-flash-tts-preview` and `TARS_STACKCHAN_TTS_VOICE=Kore`; the API key can come from `GEMINI_API_KEY` or `TARS_STACKCHAN_GEMINI_API_KEY`.
+The TTS relay requires a token so other LAN clients cannot spend the Gemini quota. `scripts/dev/run-local-tts.sh` uses `TARS_STACKCHAN_TTS_TOKEN`, `TARS_STACKCHAN_TOKEN`, or the already prepared bridge manifest token. The prepare helper patches the MOD speech path to include that token and the relay redacts it from request logs.
+The host remote TTS volume defaults to `TARS_STACKCHAN_TTS_VOLUME=0.15`, intended for close-range testing. Raise it explicitly only when the room is too noisy.
 
 If the local API is not reachable immediately after flashing, run smoke through the project helper:
 
@@ -145,7 +147,7 @@ curl -X POST \
 curl -X POST \
   -H "Authorization: Bearer $TARS_STACKCHAN_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"text":"hello stack-chan"}' \
+  -d '{"text":"hello stack-chan","volume":0.15}' \
   http://stackchan.local/v1/speech
 ```
 

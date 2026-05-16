@@ -172,6 +172,22 @@ func TestSpeakRequiresText(t *testing.T) {
 		t.Fatalf("text = %q, want hello stack-chan", bridge.speech.Text)
 	}
 
+	_, err = CallTool(context.Background(), bridge, "stackchan_speak", json.RawMessage(`{"text":"quiet hello","volume":0.15}`))
+	if err != nil {
+		t.Fatalf("valid speech volume: %v", err)
+	}
+	if bridge.speech.Volume == nil || *bridge.speech.Volume != 0.15 {
+		t.Fatalf("volume = %#v, want 0.15", bridge.speech.Volume)
+	}
+
+	_, err = CallTool(context.Background(), bridge, "stackchan_speak", json.RawMessage(`{"text":"too loud","volume":1.1}`))
+	if err == nil {
+		t.Fatal("expected invalid volume error")
+	}
+	if !strings.Contains(err.Error(), "speech volume") {
+		t.Fatalf("error = %q, want speech volume error", err)
+	}
+
 	_, err = CallTool(context.Background(), bridge, "stackchan_speak", json.RawMessage(`{"text":"   "}`))
 	if err == nil {
 		t.Fatal("expected missing text error")

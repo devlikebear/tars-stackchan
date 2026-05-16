@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hmac
 import hashlib
 import html
 import http.server
@@ -60,6 +61,10 @@ def resolve_api_key(explicit: str | None = None) -> str:
     return (explicit or os.environ.get("TARS_STACKCHAN_GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY") or "").strip()
 
 
+def resolve_tts_token(explicit: str | None = None) -> str:
+    return (explicit or os.environ.get("TARS_STACKCHAN_TTS_TOKEN") or os.environ.get("TARS_STACKCHAN_TOKEN") or "").strip()
+
+
 def normalize_model(model: str | None) -> str:
     return (model or DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
 
@@ -92,6 +97,20 @@ def build_gemini_payload(text: str, voice: str) -> dict[str, object]:
             },
         },
     }
+
+
+def is_authorized(params: dict[str, list[str]], token: str) -> bool:
+    expected = token.strip()
+    provided = params.get("token", [""])[0].strip()
+    return bool(expected) and hmac.compare_digest(provided, expected)
+
+
+def redact_path(path: str) -> str:
+    parsed = urllib.parse.urlparse(path)
+    pairs = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    redacted = [("token", "<redacted>") if key == "token" else (key, value) for key, value in pairs]
+    query = urllib.parse.urlencode(redacted)
+    return urllib.parse.urlunparse(parsed._replace(query=query))
 
 
 def synthesize_gemini_pcm(
@@ -206,6 +225,7 @@ def generate_wav(
 class Handler(http.server.BaseHTTPRequestHandler):
     cache_dir: pathlib.Path
     api_key: str
+    token: str
     model: str
     voice: str
     endpoint_template: str
@@ -226,6 +246,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
 
         params = urllib.parse.parse_qs(parsed.query)
+        if not is_authorized(params, self.token):
+            self.send_response(401)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b"invalid token\n")
+            return
+
         text = params.get("text", [""])[0].strip()
         if not text:
             self.send_error(400, "text is required")
@@ -259,12 +286,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: object) -> None:
         print(f"{self.address_string()} - {fmt % args}")
 
+    def log_request(self, code: int | str = "-", size: int | str = "-") -> None:
+        print(f'{self.address_string()} - "{self.command} {redact_path(self.path)} {self.request_version}" {code} {size}')
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=int(os.environ.get("TARS_STACKCHAN_TTS_PORT", "18080")))
     parser.add_argument("--api-key", default=resolve_api_key())
+    parser.add_argument("--token", default=resolve_tts_token())
     parser.add_argument("--model", default=os.environ.get("TARS_STACKCHAN_TTS_MODEL", DEFAULT_GEMINI_MODEL))
     parser.add_argument("--voice", default=os.environ.get("TARS_STACKCHAN_TTS_VOICE", DEFAULT_GEMINI_VOICE))
     parser.add_argument("--gemini-endpoint-template", default=os.environ.get("TARS_STACKCHAN_GEMINI_ENDPOINT", DEFAULT_GEMINI_ENDPOINT_TEMPLATE))
@@ -276,9 +307,12 @@ def main() -> None:
         default=pathlib.Path(os.environ.get("TARS_STACKCHAN_TTS_CACHE", ".work/tts-cache")),
     )
     args = parser.parse_args()
+    if not resolve_tts_token(args.token):
+        parser.error("TARS_STACKCHAN_TTS_TOKEN or TARS_STACKCHAN_TOKEN is required")
 
     Handler.cache_dir = args.cache_dir
     Handler.api_key = resolve_api_key(args.api_key)
+    Handler.token = resolve_tts_token(args.token)
     Handler.model = normalize_model(args.model)
     Handler.voice = args.voice
     Handler.endpoint_template = args.gemini_endpoint_template

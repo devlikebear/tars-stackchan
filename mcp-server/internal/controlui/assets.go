@@ -332,10 +332,16 @@ const indexHTML = `<!doctype html>
 
     <section class="wide">
       <h2>Speech</h2>
-      <label class="field">
-        <span class="label">stackchan_speak</span>
-        <textarea id="speechText" maxlength="240">hello stack-chan</textarea>
-      </label>
+      <div class="form-grid">
+        <label class="field wide">
+          <span class="label">stackchan_speak</span>
+          <textarea id="speechText" maxlength="240">hello stack-chan</textarea>
+        </label>
+        <label class="field">
+          <span class="label">Volume <span id="speechVolumeValue">0.15</span></span>
+          <input id="speechVolume" type="range" min="0" max="1" step="0.05" value="0.15">
+        </label>
+      </div>
       <p><button class="primary" id="speak">Speak</button></p>
     </section>
 
@@ -428,13 +434,17 @@ const indexHTML = `<!doctype html>
       brightness: Number($('brightness').value)
     }));
 
-    $('speak').addEventListener('click', () => postAction('/api/speech', { text: $('speechText').value }));
+    $('speak').addEventListener('click', () => postAction('/api/speech', {
+      text: $('speechText').value,
+      volume: Number($('speechVolume').value)
+    }));
     $('refreshStatus').addEventListener('click', refreshStatus);
 
     bindRange('pan', 'panValue');
     bindRange('tilt', 'tiltValue');
     bindRange('speed', 'speedValue');
     bindRange('brightness', 'brightnessValue');
+    bindRange('speechVolume', 'speechVolumeValue');
 
     loadConfig().then(refreshStatus).catch((error) => log('config error', error));
   </script>

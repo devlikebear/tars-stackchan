@@ -86,6 +86,12 @@ func TestHandlerServesControlPanel(t *testing.T) {
 	if !strings.Contains(response.Body.String(), "stackchan_speak") {
 		t.Fatalf("body did not expose speech control")
 	}
+	if !strings.Contains(response.Body.String(), `id="speechVolume"`) {
+		t.Fatalf("body did not expose speech volume control")
+	}
+	if !strings.Contains(response.Body.String(), `volume: Number($('speechVolume').value)`) {
+		t.Fatalf("body did not send speech volume payload")
+	}
 }
 
 func TestStatusAPIUsesBridge(t *testing.T) {
@@ -137,7 +143,7 @@ func TestSpeechAPIRecordsText(t *testing.T) {
 	handler := NewServer(ServerConfig{Bridge: bridge})
 
 	response := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/speech", bytes.NewBufferString(`{"text":"hello stack-chan"}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/speech", bytes.NewBufferString(`{"text":"hello stack-chan","volume":0.15}`))
 	handler.ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
@@ -145,6 +151,9 @@ func TestSpeechAPIRecordsText(t *testing.T) {
 	}
 	if bridge.speech.Text != "hello stack-chan" {
 		t.Fatalf("speech text = %q, want hello stack-chan", bridge.speech.Text)
+	}
+	if bridge.speech.Volume == nil || *bridge.speech.Volume != 0.15 {
+		t.Fatalf("speech volume = %#v, want 0.15", bridge.speech.Volume)
 	}
 }
 

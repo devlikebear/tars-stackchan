@@ -44,7 +44,8 @@ type MotionRequest struct {
 }
 
 type SpeechRequest struct {
-	Text string `json:"text"`
+	Text   string   `json:"text"`
+	Volume *float64 `json:"volume,omitempty"`
 }
 
 type ActionResult struct {

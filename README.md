@@ -32,6 +32,7 @@ Safety and validation included in the server:
 - Expressions are limited to a known allowlist.
 - LED colors must use `#RRGGBB`.
 - Speech text is required and capped at 240 characters.
+- Speech volume is optional and normalized to `0.0..1.0`.
 - Tool arguments reject unknown JSON fields.
 
 ## Quickstart
@@ -85,7 +86,7 @@ TARS_STACKCHAN_TOKEN="$TARS_STACKCHAN_TOKEN" \
 go run ./cmd/tars-stackchan-control
 ```
 
-Open `http://127.0.0.1:8787`. The panel exposes status, expression, head, LED, motion, and speech controls through the same bridge contract as the MCP server.
+Open `http://127.0.0.1:8787`. The panel exposes status, expression, head, LED, motion, speech text, and speech volume controls through the same bridge contract as the MCP server.
 
 For UI-only development without hardware:
 

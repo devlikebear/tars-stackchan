@@ -52,7 +52,7 @@ test('speech route responds without waiting for TTS playback to finish', async (
   const source = await readFile(join(modDir, 'mod.js'), 'utf8')
 
   assert.match(source, /server\.post\('\/v1\/speech'/)
-  assert.match(source, /startSpeech\(robot, speechUtterance\(request\.text\)\)/)
+  assert.match(source, /startSpeech\(robot, speechUtterance\(request\.text\), request\.volume\)/)
   assert.match(source, /encodeURIComponent\(text\)/)
   assert.doesNotMatch(source, /await\s+robot\.say/)
 })

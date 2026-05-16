@@ -98,6 +98,7 @@ func ListTools() []Tool {
 					"description": "Text to speak. Maximum 240 characters.",
 					"maxLength":   maxSpeechTextRunes,
 				},
+				"volume": numberSchema("Optional normalized speech volume from 0.0 to 1.0."),
 			}, []string{"text"}),
 		},
 	}
@@ -262,6 +263,9 @@ func validateSpeech(req SpeechRequest) error {
 	}
 	if utf8.RuneCountInString(req.Text) > maxSpeechTextRunes {
 		return fmt.Errorf("speech text must be %d characters or fewer", maxSpeechTextRunes)
+	}
+	if req.Volume != nil && (*req.Volume < 0 || *req.Volume > 1) {
+		return fmt.Errorf("speech volume %.2f must be between 0.0 and 1.0", *req.Volume)
 	}
 	return nil
 }

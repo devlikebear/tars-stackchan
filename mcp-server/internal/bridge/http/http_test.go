@@ -90,9 +90,10 @@ func TestMutatingRequestsSendBearerTokenAndJSON(t *testing.T) {
 			name: "speech",
 			path: "/v1/speech",
 			call: func(ctx context.Context, b *Bridge) (stackchan.ActionResult, error) {
-				return b.Speak(ctx, stackchan.SpeechRequest{Text: "hello stack-chan"})
+				volume := 0.15
+				return b.Speak(ctx, stackchan.SpeechRequest{Text: "hello stack-chan", Volume: &volume})
 			},
-			wantFields: map[string]any{"text": "hello stack-chan"},
+			wantFields: map[string]any{"text": "hello stack-chan", "volume": 0.15},
 		},
 	}
 
