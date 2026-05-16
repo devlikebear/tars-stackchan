@@ -92,4 +92,4 @@ tars-stackchan/
 
 ## Current Phase
 
-Phase 3 adds the firmware-side local HTTP API as a Stack-chan MOD overlay under [firmware/stackchan/mods/tars_stackchan_bridge](firmware/stackchan/mods/tars_stackchan_bridge).
+Phase 4 is prepared with upload and hardware smoke helpers. See [docs/hardware-smoke.md](docs/hardware-smoke.md).

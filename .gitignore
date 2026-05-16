@@ -12,3 +12,6 @@ mcp-server/tars-stackchan-mcp
 .env
 .env.*
 !.env.example
+
+# Local upstream firmware checkout prepared by scripts/dev/prepare-firmware-upload.sh.
+.work/

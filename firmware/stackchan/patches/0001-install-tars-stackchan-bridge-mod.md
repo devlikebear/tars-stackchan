@@ -53,6 +53,7 @@ Set:
 
 ```bash
 cd firmware
+npm install
 npm run setup
 npm run setup -- --device=esp32
 npm run deploy

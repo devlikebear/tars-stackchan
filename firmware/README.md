@@ -63,6 +63,7 @@ Follow the upstream Moddable setup first:
 
 ```bash
 cd firmware
+npm install
 npm run setup
 npm run setup -- --device=esp32
 ```
@@ -98,6 +99,9 @@ Run the full firmware build on a machine with the upstream Moddable/ESP32 toolch
 
 ```bash
 cd stack-chan/firmware
+npm install
+npm run setup
+npm run setup -- --device=esp32
 npm run build
 npm run mod mods/tars_stackchan_bridge/manifest.json
 ```
