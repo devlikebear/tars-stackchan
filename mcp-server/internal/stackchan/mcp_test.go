@@ -168,6 +168,26 @@ func TestCallToolRejectsUnknownJSONFields(t *testing.T) {
 	}
 }
 
+func TestCallToolIgnoresReservedMetaField(t *testing.T) {
+	bridge := &recordingBridge{}
+	_, err := CallTool(context.Background(), bridge, "stackchan_set_expression",
+		json.RawMessage(`{"emotion":"happy","_meta":{"progressToken":"abc"}}`))
+	if err != nil {
+		t.Fatalf("unexpected error with reserved _meta field: %v", err)
+	}
+}
+
+func TestDecodeToolCallParamsIgnoresReservedMetaField(t *testing.T) {
+	params, err := decodeToolCallParams(json.RawMessage(
+		`{"name":"stackchan_get_status","arguments":{},"_meta":{"progressToken":1}}`))
+	if err != nil {
+		t.Fatalf("unexpected error decoding params with _meta: %v", err)
+	}
+	if params.Name != "stackchan_get_status" {
+		t.Fatalf("name = %q, want stackchan_get_status", params.Name)
+	}
+}
+
 func responseHasTool(t *testing.T, response rpcResponse, toolName string) bool {
 	t.Helper()
 

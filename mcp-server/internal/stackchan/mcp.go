@@ -272,6 +272,8 @@ func decodeStrictInto(raw json.RawMessage, target any) (any, error) {
 		raw = []byte(`{}`)
 	}
 
+	raw = stripReservedMeta(raw)
+
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
@@ -281,6 +283,33 @@ func decodeStrictInto(raw json.RawMessage, target any) (any, error) {
 		return nil, errors.New("invalid trailing JSON value")
 	}
 	return target, nil
+}
+
+// stripReservedMeta removes the MCP-reserved top-level "_meta" key from a JSON
+// object before strict decoding. MCP clients (e.g. Claude Code) attach "_meta"
+// to request params and tool arguments; it carries protocol metadata, not tool
+// input, so it must be ignored rather than rejected as an unknown field.
+// Strictness is preserved for every other key.
+func stripReservedMeta(raw json.RawMessage) json.RawMessage {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return raw
+	}
+
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(trimmed, &fields); err != nil {
+		return raw
+	}
+	if _, ok := fields["_meta"]; !ok {
+		return raw
+	}
+	delete(fields, "_meta")
+
+	cleaned, err := json.Marshal(fields)
+	if err != nil {
+		return raw
+	}
+	return cleaned
 }
 
 func validateExpression(req ExpressionRequest) error {
