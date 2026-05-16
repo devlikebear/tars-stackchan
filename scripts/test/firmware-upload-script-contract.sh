@@ -46,6 +46,10 @@ assert_contains "$prepare_script" "TARS_STACKCHAN_TTS_HOST"
 assert_contains "$prepare_script" 'tts_host="tars-stackchan-tts.local"'
 assert_contains "$prepare_script" 'tts_host="${TARS_STACKCHAN_TTS_HOST:-}"'
 assert_contains "$prepare_script" "is an mDNS name; the relay must advertise it"
+# The host manifest base must be restored after the upstream checkout so the
+# host build + TTS host bake are deterministic (regression: a clean prepare
+# left it deleted and the host firmware build failed).
+assert_contains "$prepare_script" "checkout -- firmware/stackchan/manifest_local.json"
 assert_contains "$prepare_script" "TARS_STACKCHAN_TTS_VOLUME:-0.15"
 assert_contains "$prepare_script" "type: 'remote'"
 assert_contains "$prepare_script" "volume: Number(ttsVolume)"

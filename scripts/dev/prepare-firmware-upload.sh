@@ -44,6 +44,14 @@ fi
 git -C "$target_dir" fetch --depth 1 origin "$upstream_commit"
 git -C "$target_dir" checkout --detach "$upstream_commit"
 
+# Restore the upstream-tracked host manifest base. A prior patched state or an
+# interrupted run can leave firmware/stackchan/manifest_local.json deleted in
+# the worktree; the host firmware build then fails with
+# "manifest_local.json: manifest not found!" and the TTS host bake below is
+# silently skipped. It is tracked upstream (not gitignored), so restoring it
+# gives the patch step a deterministic clean base on every run.
+git -C "$target_dir" checkout -- firmware/stackchan/manifest_local.json 2>/dev/null || true
+
 mkdir -p "$target_dir/firmware/mods"
 rm -rf "$target_dir/firmware/mods/tars_stackchan_bridge"
 cp -R "$overlay_dir" "$target_dir/firmware/mods/tars_stackchan_bridge"
