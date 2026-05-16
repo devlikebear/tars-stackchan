@@ -5,7 +5,8 @@ set -eu
 # Asserts the offline-observable behavior only (no Gemini network calls):
 #   - GET /health           -> 200 "ok"
 #   - GET /api/tts no token  -> 401
-# This mirrors scripts/test/tts-remote-server-contract.* for the Python relay.
+# Full relay behavior is covered by mcp-server/internal/tts unit tests; this
+# asserts the binary's offline contract end-to-end.
 
 repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 host="127.0.0.1"
