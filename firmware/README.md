@@ -118,12 +118,18 @@ speak. The relay is the Go binary and advertises `tars-stackchan-tts.local`
 over mDNS, so the firmware resolves the current relay IP at boot without a
 re-flash when the Mac's DHCP address changes:
 
+launchd does not read your shell profile; set the secrets in the launchd
+session (a plain `export` does not reach the service):
+
 ```bash
-export GEMINI_API_KEY="<google-ai-studio-api-key>"
-export TARS_STACKCHAN_TOKEN="<local-token>"
-brew services start tars-stackchan      # background service, starts on login
-# dev alternative (foreground): tars-stackchan-control tts serve
+launchctl setenv GEMINI_API_KEY "<google-ai-studio-api-key>"
+launchctl setenv TARS_STACKCHAN_TOKEN "<local-token>"
+brew services restart tars-stackchan    # background service, starts on login
+# dev alternative (foreground, reads shell env): tars-stackchan-control tts serve
 ```
+
+`launchctl setenv` is not persistent across reboot; run it from a login
+item (per-user LaunchAgent) to make the service survive restarts.
 
 If mDNS does not resolve on your network, bake a fixed IP fallback by
 preparing/uploading firmware with `TARS_STACKCHAN_TTS_HOST=<mac-ip>`.
