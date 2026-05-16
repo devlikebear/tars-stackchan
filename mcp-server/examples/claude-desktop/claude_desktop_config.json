@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "tars-stackchan": {
+      "command": "/absolute/path/to/tars-stackchan/mcp-server/tars-stackchan-mcp",
+      "args": []
+    }
+  }
+}
