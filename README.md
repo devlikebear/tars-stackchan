@@ -192,13 +192,20 @@ is the Go binary and runs as a Homebrew service; it advertises
 `tars-stackchan-tts.local` over mDNS so the device finds it without a re-flash
 when the Mac's DHCP address changes:
 
+launchd does not read your shell profile, so set the secrets in the launchd
+session (a plain `export` is not enough for the service):
+
 ```bash
-export GEMINI_API_KEY="<google-ai-studio-api-key>"
-export TARS_STACKCHAN_TOKEN="<local-token>"
-brew services start tars-stackchan
-# dev alternative (foreground): tars-stackchan-control tts serve
+launchctl setenv GEMINI_API_KEY "<google-ai-studio-api-key>"
+launchctl setenv TARS_STACKCHAN_TOKEN "<local-token>"
+brew services restart tars-stackchan
 tars-stackchan-control tts status   # relay + mDNS health
+
+# dev alternative (foreground, reads shell env): tars-stackchan-control tts serve
 ```
+
+`launchctl setenv` does not survive a reboot; run those two lines from a
+login item (e.g. a per-user LaunchAgent) to persist them.
 
 Defaults:
 

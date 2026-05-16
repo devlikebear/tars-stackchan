@@ -73,13 +73,17 @@ relay is the Go binary (`tars-stackchan-control tts serve`); it advertises
 `tars-stackchan-tts.local` over mDNS so the device finds the current relay IP
 without a re-flash:
 
+launchd does not read the shell profile; set secrets in the launchd session:
+
 ```bash
-export GEMINI_API_KEY="<google-ai-studio-api-key>"
-export TARS_STACKCHAN_TOKEN="<local-token>"
-brew services start tars-stackchan      # auto-starts on login, restarts on crash
-# dev alternative (foreground): tars-stackchan-control tts serve
+launchctl setenv GEMINI_API_KEY "<google-ai-studio-api-key>"
+launchctl setenv TARS_STACKCHAN_TOKEN "<local-token>"
+brew services restart tars-stackchan    # auto-starts on login, restarts on crash
 tars-stackchan-control tts status        # relay + mDNS health
+# dev alternative (foreground, reads shell env): tars-stackchan-control tts serve
 ```
+
+(`launchctl setenv` does not persist across reboot — run it from a login item.)
 
 The prepare helper bakes `config.tts.host = tars-stackchan-tts.local` by
 default. On networks where mDNS does not resolve, bake a fixed IP fallback

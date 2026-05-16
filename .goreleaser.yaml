@@ -97,11 +97,16 @@ brews:
       The stackchan_upload_firmware tool is hidden unless TARS_STACKCHAN_ENABLE_FIRMWARE_TOOLS=1 is set.
       Run tars-stackchan-mcp doctor before allowing an agent to flash hardware.
 
-      Start the Gemini TTS relay as a background service:
-        export TARS_STACKCHAN_TOKEN="<local-token>"    # same token baked into the firmware MOD
-        export GEMINI_API_KEY="<google-ai-studio-key>" # or TARS_STACKCHAN_GEMINI_API_KEY
-        brew services start tars-stackchan
+      Start the Gemini TTS relay as a background service. launchd does NOT
+      read your shell profile, so the secrets must be set in the launchd
+      session (a plain `export` is not enough):
+        launchctl setenv TARS_STACKCHAN_TOKEN "<local-token>"     # firmware MOD token
+        launchctl setenv GEMINI_API_KEY "<google-ai-studio-key>"  # or TARS_STACKCHAN_GEMINI_API_KEY
+        brew services restart tars-stackchan
+      launchctl setenv does not persist across reboot; to make it permanent,
+      run those two setenv lines from a login item (e.g. a per-user
+      LaunchAgent that runs at login) before the service starts.
       The relay advertises tars-stackchan-tts.local over mDNS, so the device
       finds the current relay IP at boot without a re-flash. If mDNS does not
       resolve on your network, re-flash with TARS_STACKCHAN_TTS_HOST=<mac-ip>.
-      Check it with: tars-stackchan-control tts status
+      Verify with: tars-stackchan-control tts status  (or tars-stackchan-mcp doctor)
