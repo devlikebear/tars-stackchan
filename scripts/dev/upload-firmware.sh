@@ -104,6 +104,58 @@ run_prepare() {
   ensure_token
   log "Preparing pinned upstream firmware checkout"
   "$repo_root/scripts/dev/prepare-firmware-upload.sh"
+  verify_prepared_mod_contract
+}
+
+verify_prepared_mod_contract() {
+  require_cmd node
+  [ -f "$prepared_manifest" ] || die "missing prepared MOD manifest: $prepared_manifest"
+
+  log "Verifying prepared bridge MOD contract"
+  node - "$firmware_dir" <<'NODE'
+const fs = require('fs')
+const path = require('path')
+
+const firmwareDir = process.argv[2]
+const modDir = path.join(firmwareDir, 'mods', 'tars_stackchan_bridge')
+const manifestPath = path.join(modDir, 'manifest.json')
+const modPath = path.join(modDir, 'mod.js')
+const servicePath = path.join(modDir, 'http-server-service.js')
+
+function fail(message) {
+  console.error(`error: bridge MOD contract failed: ${message}`)
+  process.exit(1)
+}
+
+const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+const modules = manifest.modules || {}
+const modSource = fs.readFileSync(modPath, 'utf8')
+const serviceSource = fs.readFileSync(servicePath, 'utf8')
+
+if (modules['http-server-service']) {
+  fail('host firmware module collision: use tars-http-server-service instead of http-server-service')
+}
+if (modules['tars-http-server-service'] !== './http-server-service') {
+  fail('tars-http-server-service must map to the bridge HTTP service module')
+}
+if (modules['tars-listen'] !== './listen') {
+  fail('tars-listen must map to the bridge listener module')
+}
+if (/from\s+['"]http-server-service['"]/.test(modSource)) {
+  fail('mod.js must import tars-http-server-service, not the host http-server-service module')
+}
+if (!/from\s+['"]tars-http-server-service['"]/.test(modSource)) {
+  fail('mod.js must import the retained bridge HTTP service module')
+}
+if (/from\s+['"]headers['"]/.test(serviceSource)) {
+  fail('http-server-service.js must not import the host headers module')
+}
+if (!/new Map\(\)/.test(serviceSource)) {
+  fail('http-server-service.js should use plain Map headers for MOD responses')
+}
+
+console.log('ready: bridge MOD contract avoids host firmware module collision')
+NODE
 }
 
 install_deps() {
