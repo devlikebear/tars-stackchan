@@ -1,0 +1,5 @@
+repository=https://github.com/stack-chan/stack-chan
+commit=677224032e9ca25ac5c327b2eacd0034804b756f
+checked_date=2026-05-16
+source=git ls-remote https://github.com/stack-chan/stack-chan.git HEAD
+notes=Official Stack-chan firmware is Moddable SDK TypeScript/JavaScript, so the Phase 3 bridge is a MOD overlay.

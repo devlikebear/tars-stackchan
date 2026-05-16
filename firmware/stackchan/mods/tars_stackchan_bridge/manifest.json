@@ -1,0 +1,18 @@
+{
+  "include": [
+    "$(MODDABLE)/examples/manifest_mod.json",
+    "../../stackchan/services/http-server/manifest.json"
+  ],
+  "modules": {
+    "*": ["./mod", "./bridge-core"]
+  },
+  "config": {
+    "tarsStackchan": {
+      "token": "replace-with-local-token",
+      "port": 80,
+      "device": "stackchan-k151",
+      "firmware": "tars-stackchan-dev",
+      "ledName": "a"
+    }
+  }
+}

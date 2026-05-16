@@ -91,6 +91,8 @@ Request:
 
 Safety contract:
 
+- MCP server accepts `pan_deg` as a horizontal angle. Firmware may clamp or normalize it to its actual safe range.
+- The Phase 3 firmware overlay clamps `pan_deg` to `-90..90`.
 - MCP server clamps `tilt_deg` to `5..85`.
 - Firmware must also clamp `tilt_deg` to `5..85`.
 - `speed` is normalized to `0.0..1.0`.
@@ -137,6 +139,13 @@ Request:
   "name": "nod"
 }
 ```
+
+Allowed MVP motions:
+
+- `home`
+- `look_around`
+- `nod`
+- `shake`
 
 ## Action Response
 

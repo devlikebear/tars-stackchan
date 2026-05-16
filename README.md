@@ -92,4 +92,4 @@ tars-stackchan/
 
 ## Current Phase
 
-Phase 2 adds the MCP server-side HTTP bridge and protocol contract. Firmware work starts after this contract is locked.
+Phase 3 adds the firmware-side local HTTP API as a Stack-chan MOD overlay under [firmware/stackchan/mods/tars_stackchan_bridge](firmware/stackchan/mods/tars_stackchan_bridge).
