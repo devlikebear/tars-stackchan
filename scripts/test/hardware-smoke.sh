@@ -4,6 +4,9 @@ set -eu
 repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 base_url="${TARS_STACKCHAN_BASE_URL:-http://stackchan.local}"
 token="${TARS_STACKCHAN_TOKEN:-}"
+connect_timeout="${TARS_STACKCHAN_SMOKE_CONNECT_TIMEOUT:-3}"
+max_time="${TARS_STACKCHAN_SMOKE_MAX_TIME:-8}"
+status_only="${TARS_STACKCHAN_SMOKE_STATUS_ONLY:-0}"
 
 if [ -z "$token" ]; then
   echo "TARS_STACKCHAN_TOKEN is required" >&2
@@ -15,9 +18,54 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 1
 fi
 
+base_host="$(printf '%s' "$base_url" | sed 's#^[^:]*://##; s#/.*$##; s#:.*$##')"
+base_port="$(printf '%s' "$base_url" | sed -n 's#^[^:]*://[^:/]*:\([0-9][0-9]*\).*#\1#p')"
+if [ -z "$base_port" ]; then
+  case "$base_url" in
+    https://*) base_port=443 ;;
+    *) base_port=80 ;;
+  esac
+fi
+
+diagnose_reachability() {
+  echo "diagnostics:"
+  echo "  base_url: $base_url"
+  echo "  host: $base_host"
+  echo "  port: $base_port"
+
+  if command -v dscacheutil >/dev/null 2>&1; then
+    echo "+ dscacheutil -q host -a name $base_host"
+    dscacheutil -q host -a name "$base_host" || true
+  fi
+
+  if command -v route >/dev/null 2>&1; then
+    echo "+ route -n get $base_host"
+    route -n get "$base_host" || true
+  fi
+
+  if command -v ping >/dev/null 2>&1; then
+    echo "+ ping -c 1 -W 1000 $base_host"
+    ping -c 1 -W 1000 "$base_host" || true
+  fi
+
+  if command -v nc >/dev/null 2>&1; then
+    echo "+ nc -vz -G $connect_timeout $base_host $base_port"
+    nc -vz -G "$connect_timeout" "$base_host" "$base_port" || true
+  fi
+
+  if command -v arp >/dev/null 2>&1; then
+    echo "+ arp -n $base_host"
+    arp -n "$base_host" || true
+  fi
+}
+
 run_curl() {
   echo "+ curl request"
-  curl "$@"
+  if ! curl --connect-timeout "$connect_timeout" --max-time "$max_time" "$@"; then
+    echo "hardware smoke request failed" >&2
+    diagnose_reachability
+    return 1
+  fi
   echo
 }
 
@@ -34,6 +82,10 @@ call_tool() {
 }
 
 run_curl -fsS "$base_url/v1/status"
+
+if [ "$status_only" = "1" ]; then
+  exit 0
+fi
 
 run_curl -fsS -X POST \
   -H "Authorization: Bearer $token" \

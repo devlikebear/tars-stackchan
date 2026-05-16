@@ -1,4 +1,3 @@
-import Headers from 'headers'
 import { URLSearchParams } from 'url'
 import listen from 'tars-listen'
 
@@ -40,15 +39,24 @@ class Response {
   #status = 200
 
   constructor(body, options = {}) {
-    this.#body = body instanceof ArrayBuffer ? body : ArrayBuffer.fromString(body.toString())
-    const headers = new Headers()
+    this.#body = body instanceof ArrayBuffer ? body : ArrayBuffer.fromString((body ?? '').toString())
+    let bodyLength = this.#body.byteLength
+    if (bodyLength === undefined) {
+      bodyLength = this.#body.length
+    }
+    if (bodyLength === undefined) {
+      bodyLength = 0
+    }
+    const headers = new Map()
     if (options.headers) {
       for (const [key, value] of Object.entries(options.headers)) {
-        headers.set(key, value)
+        if (value !== undefined && value !== null) {
+          headers.set(key, value.toString())
+        }
       }
     }
-    if (headers.get('content-length') === undefined) {
-      headers.set('content-length', this.#body.byteLength)
+    if (!headers.has('content-length')) {
+      headers.set('content-length', bodyLength.toString())
     }
     this.#headers = headers
     this.#status = options.status ?? 200
@@ -79,7 +87,7 @@ class Response {
 class Context {
   #req
   #status
-  #headers = new Headers()
+  #headers = new Map()
 
   constructor(request) {
     this.#req = new Request(request)
@@ -90,7 +98,7 @@ class Context {
   }
 
   text(text, status) {
-    this.#headers.set('Content-type', 'text/plain')
+    this.#headers.set('content-type', 'text/plain')
     return new Response(text, {
       status: status ?? this.#status,
       headers: Object.fromEntries(this.#headers.entries()),
@@ -98,7 +106,7 @@ class Context {
   }
 
   json(json, status) {
-    this.#headers.set('Content-type', 'application/json')
+    this.#headers.set('content-type', 'application/json')
     return new Response(JSON.stringify(json), {
       status: status ?? this.#status,
       headers: Object.fromEntries(this.#headers.entries()),

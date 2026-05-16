@@ -22,7 +22,23 @@ test('bridge mod owns launch so hardware setup UI touch probing is bypassed', as
 
 test('bridge mod ships its retained HTTP service modules', async () => {
   const manifest = JSON.parse(await readFile(join(modDir, 'manifest.json'), 'utf8'))
+  const source = await readFile(join(modDir, 'mod.js'), 'utf8')
 
-  assert.equal(manifest.modules['http-server-service'], './http-server-service')
+  assert.equal(manifest.modules['tars-http-server-service'], './http-server-service')
   assert.equal(manifest.modules['tars-listen'], './listen')
+  assert.equal(manifest.modules['http-server-service'], undefined)
+  assert.match(source, /from\s+['"]tars-http-server-service['"]/)
+  assert.doesNotMatch(source, /from\s+['"]http-server-service['"]/)
+})
+
+test('HTTP response headers never pass undefined values to Moddable Headers', async () => {
+  const source = await readFile(join(modDir, 'http-server-service.js'), 'utf8')
+
+  assert.doesNotMatch(source, /import Headers from ['"]headers['"]/)
+  assert.doesNotMatch(source, /new Headers/)
+  assert.match(source, /new Map/)
+  assert.match(source, /value !== undefined && value !== null/)
+  assert.match(source, /bodyLength/)
+  assert.match(source, /bodyLength\.toString\(\)/)
+  assert.doesNotMatch(source, /for \(const \[key, value\] of Object\.entries\(options\.headers\)\) {\n\s+headers\.set\(key, value\)/)
 })

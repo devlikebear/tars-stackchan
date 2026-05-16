@@ -1,6 +1,6 @@
 import config from 'mod/config'
 import Net from 'net'
-import { HttpServerService } from 'http-server-service'
+import { HttpServerService } from 'tars-http-server-service'
 
 import {
   DEFAULT_CAPABILITIES,

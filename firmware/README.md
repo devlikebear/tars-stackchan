@@ -102,6 +102,7 @@ The helper also guards the launch/config issues found during hardware upload:
 - MOD config must be read from `mod/config`, not `mc/config`.
 - The bridge exports `onLaunch()` to bypass the default setup UI touch probe on K151/CoreS3.
 - HTTP listener/service modules are shipped inside the MOD so the server lifetime is retained with the bridge.
+- MOD-owned modules use `tars-*` names, such as `tars-http-server-service`, to avoid resolving to host firmware modules with the same generic names.
 
 ## Manual HTTP Smoke
 

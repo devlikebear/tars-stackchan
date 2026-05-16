@@ -1,12 +1,12 @@
 # Hardware Smoke
 
-Status: not run yet.
+Status: passed.
 
-Date: TBD
+Date: 2026-05-16
 Firmware upstream: `stack-chan/stack-chan@677224032e9ca25ac5c327b2eacd0034804b756f`
-TARS Stack-chan commit: TBD
+TARS Stack-chan commit: Phase 4 smoke fix commit
 Device: M5Stack Stack-chan K151 / CoreS3
-Base URL: `http://stackchan.local`
+Base URL: `http://192.168.219.113`
 
 ## Upload Prerequisites
 
@@ -64,6 +64,9 @@ Check readiness any time:
 scripts/dev/check-firmware-upload-ready.sh
 ```
 
+The bridge MOD must avoid module names that collide with host firmware modules.
+The Stack-chan host already ships `http-server-service`; the bridge maps its retained service as `tars-http-server-service` and imports that name so the MOD does not accidentally load the host copy.
+
 ## Smoke Commands
 
 ```bash
@@ -74,21 +77,21 @@ scripts/test/hardware-smoke.sh
 
 ## Checklist
 
-- [ ] Firmware host deploy completed.
-- [ ] `tars_stackchan_bridge` MOD upload completed.
-- [ ] `scripts/dev/check-firmware-upload-ready.sh` passes before upload.
-- [ ] Device joined Wi-Fi.
-- [ ] `GET /v1/status` responds.
-- [ ] Missing or invalid token is rejected for mutating requests.
-- [ ] `stackchan_get_status` works through MCP.
-- [ ] `stackchan_set_expression` changes expression.
-- [ ] `stackchan_move_head` moves head and clamps unsafe tilt.
-- [ ] `stackchan_set_led` changes LED.
-- [ ] `stackchan_run_motion` runs `nod`.
+- [x] Firmware host deploy completed.
+- [x] `tars_stackchan_bridge` MOD upload completed.
+- [x] `scripts/dev/check-firmware-upload-ready.sh` passes before upload.
+- [x] Device joined Wi-Fi.
+- [x] `GET /v1/status` responds.
+- [x] Missing or invalid token is rejected for mutating requests.
+- [x] `stackchan_get_status` works through MCP.
+- [x] `stackchan_set_expression` changes expression.
+- [x] `stackchan_move_head` moves head and clamps unsafe tilt.
+- [x] `stackchan_set_led` changes LED.
+- [x] `stackchan_run_motion` runs `nod`.
 
 ## Results
 
-Host firmware deploy and direct MOD flash have been verified on the connected CoreS3/K151.
+Direct MOD flash and end-to-end hardware smoke have been verified on the connected CoreS3/K151.
 The bridge boot log reached:
 
 ```text
@@ -96,12 +99,30 @@ The bridge boot log reached:
 [tars-stackchan] local control API listening on port 80
 ```
 
-HTTP smoke is still blocked until the Mac can route to the device IP.
-The last observed device IP was `192.168.219.113`, but Mac-side TCP checks returned `No route to host`.
+Successful HTTP status response:
+
+```json
+{"connected":true,"device":"stackchan-k151","firmware":"tars-stackchan-dev","ip":"192.168.219.113","capabilities":["expression","head","leds","motion"]}
+```
+
+Successful hardware smoke command:
+
+```bash
+TARS_STACKCHAN_BASE_URL=http://192.168.219.113 scripts/dev/upload-firmware.sh smoke
+```
+
+The smoke covered raw HTTP requests and MCP tool calls for status, expression, head movement, LED, and motion. The unsafe `tilt_deg=120` input was clamped to `tilt_deg=85` by the firmware response.
+
+Missing and invalid bearer tokens were rejected with HTTP 401:
+
+```text
+{"error":"invalid token"}
+HTTP 401
+```
 
 ## Known Limitations
 
 - The bridge uses a static local bearer token for MVP.
 - Camera, microphone, speech, NFC, IR, OTA, and multi-device flows are out of scope.
 - The firmware overlay is tested by contract tests locally; full validation requires a real Stack-chan device.
-- Some routers isolate Wi-Fi clients. If the firmware log shows an IP but `curl` fails with `No route to host`, check Mac network attachment, VPN routes, and router client isolation before changing firmware code.
+- `stackchan.local` did not resolve in this environment during the smoke; use the IP from the firmware log or status response until mDNS is verified.
