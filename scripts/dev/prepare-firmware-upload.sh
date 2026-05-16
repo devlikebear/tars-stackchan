@@ -55,12 +55,13 @@ Prepared upstream firmware checkout:
   $target_dir
 
 Next upload commands:
-  cd "$target_dir/firmware"
-  npm install
-  npm run setup
-  npm run setup -- --device=esp32
-  npm_config_target=$target npm run deploy
-  npm_config_target=$target npm run mod mods/tars_stackchan_bridge/manifest.json
+  TARS_STACKCHAN_UPLOAD_PORT=/dev/cu.usbmodemXXXX \\
+  TARS_STACKCHAN_DEPLOY_HOST=1 \\
+  scripts/dev/upload-firmware.sh all
+
+MOD-only direct flash after the host is already deployed:
+  TARS_STACKCHAN_UPLOAD_PORT=/dev/cu.usbmodemXXXX \\
+  scripts/dev/upload-firmware.sh mod
 
 After upload, run:
   TARS_STACKCHAN_BASE_URL=http://stackchan.local \\

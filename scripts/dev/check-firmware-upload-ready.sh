@@ -5,6 +5,7 @@ repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 target_dir="${TARS_STACKCHAN_UPSTREAM_DIR:-$repo_root/.work/stack-chan}"
 firmware_dir="$target_dir/firmware"
 manifest="$firmware_dir/mods/tars_stackchan_bridge/manifest.json"
+moddable_dir="${MODDABLE:-$HOME/.local/share/moddable}"
 ready=true
 
 fail() {
@@ -45,16 +46,27 @@ else
   fail "npm is required"
 fi
 
+if command -v uv >/dev/null 2>&1; then
+  pass "uv is available for Python/esptool"
+else
+  fail "uv is required for direct ESP32 MOD flash"
+fi
+
 if [ -x "$firmware_dir/node_modules/.bin/xs-dev" ]; then
   pass "upstream npm dependencies are installed"
 else
   fail "upstream npm dependencies missing; run npm install in $firmware_dir"
 fi
 
-if command -v mcconfig >/dev/null 2>&1; then
-  pass "mcconfig is available"
+mcconfig_path="$(command -v mcconfig 2>/dev/null || true)"
+if [ -z "$mcconfig_path" ] && [ -x "$moddable_dir/build/bin/mac/release/mcconfig" ]; then
+  mcconfig_path="$moddable_dir/build/bin/mac/release/mcconfig"
+fi
+
+if [ -n "$mcconfig_path" ]; then
+  pass "mcconfig is available at $mcconfig_path"
 else
-  fail "mcconfig is not available; run npm run setup from $firmware_dir and reload shell if needed"
+  fail "mcconfig is not available; run npm run setup from $firmware_dir"
 fi
 
 serial_ports="$(ls /dev/cu.usbmodem* /dev/cu.usbserial* /dev/cu.SLAB_USBtoUART* 2>/dev/null || true)"
@@ -69,9 +81,10 @@ if [ "$ready" = true ]; then
   cat <<EOF
 
 Firmware upload can start now:
-  cd "$firmware_dir"
-  npm_config_target=${TARS_STACKCHAN_TARGET:-esp32/m5stack_cores3} npm run deploy
-  npm_config_target=${TARS_STACKCHAN_TARGET:-esp32/m5stack_cores3} npm run mod mods/tars_stackchan_bridge/manifest.json
+  scripts/dev/upload-firmware.sh mod
+
+For a full one-command host deploy + MOD direct flash + smoke:
+  TARS_STACKCHAN_DEPLOY_HOST=1 scripts/dev/upload-firmware.sh all
 EOF
   exit 0
 fi

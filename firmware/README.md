@@ -59,52 +59,49 @@ Edit `firmware/mods/tars_stackchan_bridge/manifest.json` and replace `replace-wi
 
 ## Build And Flash
 
-Follow the upstream Moddable setup first:
+The project helper wraps the upstream Moddable setup and the reliable upload path:
 
 ```bash
-cd firmware
-npm install
-npm run setup
-npm run setup -- --device=esp32
+cd /Users/changheonshin/workspace/myworks/tars-stackchan
+export TARS_STACKCHAN_TOKEN="<local-token>"
+export TARS_STACKCHAN_UPLOAD_PORT=/dev/cu.usbmodem1101
+TARS_STACKCHAN_DEPLOY_HOST=1 scripts/dev/upload-firmware.sh all
 ```
 
-Deploy the host firmware:
+For MOD-only iteration after the host firmware is already deployed:
 
 ```bash
-npm run deploy
+scripts/dev/upload-firmware.sh mod
 ```
 
-Then flash this bridge as a MOD:
+The helper intentionally avoids the observed macOS/CoreS3 `serial2xsbug -install` hang by direct-flashing the generated XSA archive into the ESP32 `xs` MOD partition:
+
+```text
+offset: 0xfa0000
+size:   0x40000
+```
+
+Python tooling for this direct flash path runs through `uv`:
 
 ```bash
-npm run mod mods/tars_stackchan_bridge/manifest.json
+uv run --with esptool esptool ...
 ```
 
-For a CoreS3/K151 target, use the upstream target override if needed:
-
-```bash
-npm_config_target=esp32/m5stack_cores3 npm run deploy
-npm_config_target=esp32/m5stack_cores3 npm run mod mods/tars_stackchan_bridge/manifest.json
-```
+If the upstream partition table changes, override with `TARS_STACKCHAN_MOD_OFFSET` and `TARS_STACKCHAN_MOD_SIZE`.
 
 ## Local Verification
 
-The host machine used for this implementation does not currently have `idf.py` installed, and this upstream firmware is Moddable-based. The local automated verification for the firmware bridge is therefore the MOD contract test:
+The local automated verification for the firmware bridge is the MOD contract test:
 
 ```bash
-node --test firmware/stackchan/mods/tars_stackchan_bridge/bridge-core.test.mjs
+scripts/test/firmware-bridge-contract.sh
 ```
 
-Run the full firmware build on a machine with the upstream Moddable/ESP32 toolchain installed:
+The helper also guards the launch/config issues found during hardware upload:
 
-```bash
-cd stack-chan/firmware
-npm install
-npm run setup
-npm run setup -- --device=esp32
-npm run build
-npm run mod mods/tars_stackchan_bridge/manifest.json
-```
+- MOD config must be read from `mod/config`, not `mc/config`.
+- The bridge exports `onLaunch()` to bypass the default setup UI touch probe on K151/CoreS3.
+- HTTP listener/service modules are shipped inside the MOD so the server lifetime is retained with the bridge.
 
 ## Manual HTTP Smoke
 
