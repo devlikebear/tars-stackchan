@@ -10,6 +10,7 @@ import {
   normalizeHeadRequest,
   normalizeLEDRequest,
   normalizeMotionRequest,
+  normalizeSpeechRequest,
 } from './bridge-core'
 
 const bridgeConfig = config.tarsStackchan ?? {}
@@ -109,6 +110,12 @@ function onRobotCreated(robot) {
     return c.json(actionResponse('run_motion', { name: request.name }))
   }))
 
+  server.post('/v1/speech', withAuth(async (c) => {
+    const request = normalizeSpeechRequest(await readJSON(c))
+    startSpeech(robot, request.text)
+    return c.json(actionResponse('speak', { text: request.text }))
+  }))
+
   trace(`[tars-stackchan] local control API listening${PORT ? ` on port ${PORT}` : ''}\n`)
 }
 
@@ -140,6 +147,16 @@ async function runMotion(robot, name) {
   await robot.driver.setTorque(true)
   for (const rotation of steps) {
     await robot.driver.applyRotation(rotation, 0.35)
+  }
+}
+
+function startSpeech(robot, text) {
+  const speech = robot.say(text)
+  if (speech && typeof speech.catch === 'function') {
+    speech.catch((error) => {
+      const message = error?.message ?? String(error)
+      trace(`[tars-stackchan] speech failed: ${message}\n`)
+    })
   }
 }
 

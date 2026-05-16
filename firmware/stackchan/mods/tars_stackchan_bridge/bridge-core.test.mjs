@@ -9,6 +9,7 @@ import {
   normalizeHeadRequest,
   normalizeLEDRequest,
   normalizeMotionRequest,
+  normalizeSpeechRequest,
 } from './bridge-core.js'
 
 test('bearer token auth requires an exact configured token match', () => {
@@ -78,6 +79,12 @@ test('motion request allowlist normalizes names', () => {
   assert.deepEqual(normalizeMotionRequest({ name: 'nod' }), { name: 'nod' })
   assert.deepEqual(normalizeMotionRequest({ name: 'home' }), { name: 'home' })
   assert.throws(() => normalizeMotionRequest({ name: 'dance' }), /unsupported motion/)
+})
+
+test('speech request requires bounded text', () => {
+  assert.deepEqual(normalizeSpeechRequest({ text: 'hello stack-chan' }), { text: 'hello stack-chan' })
+  assert.throws(() => normalizeSpeechRequest({ text: '' }), /text is required/)
+  assert.throws(() => normalizeSpeechRequest({ text: 'x'.repeat(241) }), /text must be 240 characters or fewer/)
 })
 
 test('action response keeps the firmware response shape aligned with the MCP bridge', () => {

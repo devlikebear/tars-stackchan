@@ -10,7 +10,7 @@ AI Agent / TARS / Claude
     -> tars-stackchan MCP server
       -> local HTTP API over Wi-Fi
         -> Stack-chan firmware bridge
-          -> expression / head servo / LED / motion
+          -> expression / head servo / LED / motion / speech
 ```
 
 The server supports a mock bridge for local development and an HTTP bridge for real firmware control.
@@ -24,12 +24,14 @@ Implemented MCP tools:
 - `stackchan_move_head`
 - `stackchan_set_led`
 - `stackchan_run_motion`
+- `stackchan_speak`
 
 Safety and validation included in the server:
 
 - Head tilt is clamped to `5..85` degrees.
 - Expressions are limited to a known allowlist.
 - LED colors must use `#RRGGBB`.
+- Speech text is required and capped at 240 characters.
 - Tool arguments reject unknown JSON fields.
 
 ## Quickstart
@@ -41,7 +43,7 @@ go build ./cmd/tars-stackchan-mcp
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | go run ./cmd/tars-stackchan-mcp
 ```
 
-The default bridge is the in-memory mock bridge. It reports a connected `stackchan-k151` device and records expression, head, LED, and motion requests locally.
+The default bridge is the in-memory mock bridge. It reports a connected `stackchan-k151` device and records expression, head, LED, motion, and speech requests locally.
 
 ## Bridge Configuration
 

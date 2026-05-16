@@ -32,6 +32,7 @@ POST /v1/expression
 POST /v1/head
 POST /v1/leds
 POST /v1/motion
+POST /v1/speech
 ```
 
 Mutating requests require:
@@ -89,6 +90,14 @@ uv run --with esptool esptool ...
 
 If the upstream partition table changes, override with `TARS_STACKCHAN_MOD_OFFSET` and `TARS_STACKCHAN_MOD_SIZE`.
 
+If the local API is not reachable immediately after flashing, run smoke through the project helper:
+
+```bash
+TARS_STACKCHAN_BASE_URL=http://stackchan.local scripts/dev/upload-firmware.sh smoke
+```
+
+When USB is still connected, the helper performs one hard-reset retry before failing. Disable it with `TARS_STACKCHAN_SMOKE_RETRY_USB_RESET=0`.
+
 ## Local Verification
 
 The local automated verification for the firmware bridge is the MOD contract test:
@@ -120,6 +129,12 @@ curl -X POST \
   -H "Content-Type: application/json" \
   -d '{"pan_deg":45,"tilt_deg":120,"speed":0.6}' \
   http://stackchan.local/v1/head
+
+curl -X POST \
+  -H "Authorization: Bearer $TARS_STACKCHAN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"hello stack-chan"}' \
+  http://stackchan.local/v1/speech
 ```
 
 The head response should report `tilt_deg` as `85`. Pan is also clamped to the firmware overlay's safe `-90..90` degree range.

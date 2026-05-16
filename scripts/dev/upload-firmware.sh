@@ -17,6 +17,8 @@ skip_setup="${TARS_STACKCHAN_SKIP_SETUP:-0}"
 force_setup="${TARS_STACKCHAN_FORCE_SETUP:-0}"
 deploy_host="${TARS_STACKCHAN_DEPLOY_HOST:-0}"
 skip_smoke="${TARS_STACKCHAN_SKIP_SMOKE:-0}"
+smoke_retry_usb_reset="${TARS_STACKCHAN_SMOKE_RETRY_USB_RESET:-1}"
+reset_settle_seconds="${TARS_STACKCHAN_RESET_SETTLE_SECONDS:-15}"
 base_url="${TARS_STACKCHAN_BASE_URL:-http://stackchan.local}"
 upload_port="${TARS_STACKCHAN_UPLOAD_PORT:-}"
 
@@ -41,6 +43,8 @@ Important environment:
   TARS_STACKCHAN_FORCE_SETUP set to 1 to rerun upstream setup even when mcconfig exists
   TARS_STACKCHAN_MOD_OFFSET  ESP32 xs MOD partition offset, defaults to 0xfa0000
   TARS_STACKCHAN_MOD_SIZE    ESP32 xs MOD partition size, defaults to 0x40000
+  TARS_STACKCHAN_SMOKE_RETRY_USB_RESET set to 0 to skip USB hard-reset retry after smoke failure
+  TARS_STACKCHAN_RESET_SETTLE_SECONDS seconds to wait after USB reset before retrying smoke
 EOF
 }
 
@@ -73,19 +77,26 @@ ensure_token() {
   [ -n "${TARS_STACKCHAN_TOKEN:-}" ] || die "TARS_STACKCHAN_TOKEN is required"
 }
 
-ensure_upload_port() {
+find_upload_port() {
   if [ -n "$upload_port" ]; then
-    [ -c "$upload_port" ] || die "TARS_STACKCHAN_UPLOAD_PORT is not a character device: $upload_port"
-    return
+    [ -c "$upload_port" ] || return 1
+    return 0
   fi
 
   for candidate in /dev/cu.usbmodem* /dev/cu.usbserial* /dev/cu.SLAB_USBtoUART*; do
     if [ -c "$candidate" ]; then
       upload_port="$candidate"
-      return
+      return 0
     fi
   done
 
+  return 1
+}
+
+ensure_upload_port() {
+  if find_upload_port; then
+    return
+  fi
   die "no USB serial device found; connect Stack-chan or set TARS_STACKCHAN_UPLOAD_PORT"
 }
 
@@ -212,12 +223,39 @@ flash_mod_direct() {
   run_esptool --chip "$chip" --port "$upload_port" --baud "$baud" write-flash "$mod_offset" "$xsa"
 }
 
-run_smoke() {
-  ensure_token
-  log "Running hardware smoke against $base_url"
+run_smoke_once() {
   TARS_STACKCHAN_BASE_URL="$base_url" \
     TARS_STACKCHAN_TOKEN="$TARS_STACKCHAN_TOKEN" \
     "$repo_root/scripts/test/hardware-smoke.sh"
+}
+
+reset_device_for_smoke_retry() {
+  if ! find_upload_port; then
+    log "Smoke failed; no USB serial device found for hard-reset retry"
+    return 1
+  fi
+
+  setup_toolchain_env
+  log "Smoke failed; hard-resetting Stack-chan over USB before one retry"
+  run_esptool --chip "$chip" --port "$upload_port" chip-id
+  log "Waiting ${reset_settle_seconds}s for Wi-Fi and the local API"
+  sleep "$reset_settle_seconds"
+}
+
+run_smoke() {
+  ensure_token
+  log "Running hardware smoke against $base_url"
+  if run_smoke_once; then
+    return
+  fi
+
+  if [ "$smoke_retry_usb_reset" != "1" ]; then
+    return 1
+  fi
+
+  reset_device_for_smoke_retry || return 1
+  log "Retrying hardware smoke against $base_url"
+  run_smoke_once
 }
 
 case "$mode" in

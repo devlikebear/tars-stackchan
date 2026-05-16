@@ -82,6 +82,10 @@ func (b *Bridge) RunMotion(ctx context.Context, req stackchan.MotionRequest) (st
 	return b.postAction(ctx, "/v1/motion", req)
 }
 
+func (b *Bridge) Speak(ctx context.Context, req stackchan.SpeechRequest) (stackchan.ActionResult, error) {
+	return b.postAction(ctx, "/v1/speech", req)
+}
+
 func (b *Bridge) postAction(ctx context.Context, path string, payload any) (stackchan.ActionResult, error) {
 	var result stackchan.ActionResult
 	if err := b.do(ctx, http.MethodPost, path, payload, true, &result); err != nil {

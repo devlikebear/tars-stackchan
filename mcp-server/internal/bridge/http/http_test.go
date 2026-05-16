@@ -28,7 +28,7 @@ func TestGetStatusUsesV1Status(t *testing.T) {
 			Firmware:       "tars-stackchan-dev",
 			BatteryPercent: 87,
 			IP:             "192.168.1.42",
-			Capabilities:   []string{"expression", "head", "leds", "motion"},
+			Capabilities:   []string{"expression", "head", "leds", "motion", "speech"},
 		})
 	}))
 	defer server.Close()
@@ -85,6 +85,14 @@ func TestMutatingRequestsSendBearerTokenAndJSON(t *testing.T) {
 				return b.RunMotion(ctx, stackchan.MotionRequest{Name: "nod"})
 			},
 			wantFields: map[string]any{"name": "nod"},
+		},
+		{
+			name: "speech",
+			path: "/v1/speech",
+			call: func(ctx context.Context, b *Bridge) (stackchan.ActionResult, error) {
+				return b.Speak(ctx, stackchan.SpeechRequest{Text: "hello stack-chan"})
+			},
+			wantFields: map[string]any{"text": "hello stack-chan"},
 		},
 	}
 

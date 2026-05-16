@@ -14,6 +14,7 @@ type Bridge struct {
 	head       stackchan.HeadRequest
 	led        stackchan.LEDRequest
 	motion     stackchan.MotionRequest
+	speech     stackchan.SpeechRequest
 }
 
 func New() *Bridge {
@@ -29,6 +30,7 @@ func New() *Bridge {
 				"head",
 				"leds",
 				"motion",
+				"speech",
 			},
 		},
 		expression: stackchan.ExpressionRequest{Emotion: "neutral"},
@@ -69,4 +71,11 @@ func (b *Bridge) RunMotion(_ context.Context, req stackchan.MotionRequest) (stac
 	defer b.mu.Unlock()
 	b.motion = req
 	return stackchan.ActionResult{OK: true, Action: "run_motion", State: req}, nil
+}
+
+func (b *Bridge) Speak(_ context.Context, req stackchan.SpeechRequest) (stackchan.ActionResult, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.speech = req
+	return stackchan.ActionResult{OK: true, Action: "speak", State: req}, nil
 }

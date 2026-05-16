@@ -40,7 +40,8 @@ Response:
     "expression",
     "head",
     "leds",
-    "motion"
+    "motion",
+    "speech"
   ]
 }
 ```
@@ -147,6 +148,24 @@ Allowed MVP motions:
 - `nod`
 - `shake`
 
+## Speech
+
+```http
+POST /v1/speech
+Authorization: Bearer <TARS_STACKCHAN_TOKEN>
+Content-Type: application/json
+```
+
+Request:
+
+```json
+{
+  "text": "hello stack-chan"
+}
+```
+
+`text` is required and must be 240 characters or fewer. Firmware sends it through Stack-chan's configured `robot.say(...)` speech voice.
+
 ## Action Response
 
 Mutating endpoints return an action result:
@@ -194,12 +213,12 @@ POST /v1/expression
 POST /v1/head
 POST /v1/leds
 POST /v1/motion
+POST /v1/speech
 ```
 
 Future endpoints:
 
 ```text
-POST /v1/speech
 POST /v1/ir/send
 GET  /v1/sensors
 GET  /v1/camera/snapshot

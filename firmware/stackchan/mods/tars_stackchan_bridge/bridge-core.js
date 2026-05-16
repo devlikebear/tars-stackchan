@@ -2,7 +2,8 @@ export const SAFE_TILT_MIN = 5
 export const SAFE_TILT_MAX = 85
 export const SAFE_PAN_MIN = -90
 export const SAFE_PAN_MAX = 90
-export const DEFAULT_CAPABILITIES = ['expression', 'head', 'leds', 'motion']
+export const MAX_SPEECH_TEXT_LENGTH = 240
+export const DEFAULT_CAPABILITIES = ['expression', 'head', 'leds', 'motion', 'speech']
 
 const DEG_TO_RAD = Math.PI / 180
 const HEAD_NEUTRAL_TILT_DEG = 45
@@ -110,6 +111,15 @@ export function normalizeMotionRequest(payload) {
     throw new Error(`unsupported motion: ${name}`)
   }
   return { name }
+}
+
+export function normalizeSpeechRequest(payload) {
+  const request = objectPayload(payload)
+  const text = stringField(request.text, 'text')
+  if (text.length > MAX_SPEECH_TEXT_LENGTH) {
+    throw new Error(`text must be ${MAX_SPEECH_TEXT_LENGTH} characters or fewer`)
+  }
+  return { text }
 }
 
 export function actionResponse(action, state = undefined) {

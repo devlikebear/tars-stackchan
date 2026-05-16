@@ -13,6 +13,7 @@ type recordingBridge struct {
 	head       HeadRequest
 	led        LEDRequest
 	motion     MotionRequest
+	speech     SpeechRequest
 }
 
 func (b *recordingBridge) GetStatus(context.Context) (Status, error) {
@@ -27,6 +28,7 @@ func (b *recordingBridge) GetStatus(context.Context) (Status, error) {
 				"head",
 				"leds",
 				"motion",
+				"speech",
 			},
 		}
 	}
@@ -53,6 +55,11 @@ func (b *recordingBridge) RunMotion(_ context.Context, req MotionRequest) (Actio
 	return ActionResult{OK: true, Action: "run_motion"}, nil
 }
 
+func (b *recordingBridge) Speak(_ context.Context, req SpeechRequest) (ActionResult, error) {
+	b.speech = req
+	return ActionResult{OK: true, Action: "speak"}, nil
+}
+
 func TestListToolsExposesStackchanTools(t *testing.T) {
 	want := []string{
 		"stackchan_get_status",
@@ -60,6 +67,7 @@ func TestListToolsExposesStackchanTools(t *testing.T) {
 		"stackchan_move_head",
 		"stackchan_set_led",
 		"stackchan_run_motion",
+		"stackchan_speak",
 	}
 
 	gotTools := ListTools()
@@ -150,5 +158,33 @@ func TestLEDColorValidation(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid LED color") {
 		t.Fatalf("error = %q, want invalid LED color", err)
+	}
+}
+
+func TestSpeakRequiresText(t *testing.T) {
+	bridge := &recordingBridge{}
+
+	_, err := CallTool(context.Background(), bridge, "stackchan_speak", json.RawMessage(`{"text":"hello stack-chan"}`))
+	if err != nil {
+		t.Fatalf("valid speech: %v", err)
+	}
+	if bridge.speech.Text != "hello stack-chan" {
+		t.Fatalf("text = %q, want hello stack-chan", bridge.speech.Text)
+	}
+
+	_, err = CallTool(context.Background(), bridge, "stackchan_speak", json.RawMessage(`{"text":"   "}`))
+	if err == nil {
+		t.Fatal("expected missing text error")
+	}
+	if !strings.Contains(err.Error(), "speech text is required") {
+		t.Fatalf("error = %q, want speech text required", err)
+	}
+
+	_, err = CallTool(context.Background(), bridge, "stackchan_speak", json.RawMessage(`{"text":"`+strings.Repeat("x", 241)+`"}`))
+	if err == nil {
+		t.Fatal("expected long text error")
+	}
+	if !strings.Contains(err.Error(), "speech text must be 240 characters or fewer") {
+		t.Fatalf("error = %q, want speech text length error", err)
 	}
 }

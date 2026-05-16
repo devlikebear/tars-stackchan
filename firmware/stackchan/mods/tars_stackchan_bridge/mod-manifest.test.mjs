@@ -42,3 +42,11 @@ test('HTTP response headers never pass undefined values to Moddable Headers', as
   assert.match(source, /bodyLength\.toString\(\)/)
   assert.doesNotMatch(source, /for \(const \[key, value\] of Object\.entries\(options\.headers\)\) {\n\s+headers\.set\(key, value\)/)
 })
+
+test('speech route responds without waiting for TTS playback to finish', async () => {
+  const source = await readFile(join(modDir, 'mod.js'), 'utf8')
+
+  assert.match(source, /server\.post\('\/v1\/speech'/)
+  assert.match(source, /startSpeech\(robot, request\.text\)/)
+  assert.doesNotMatch(source, /await\s+robot\.say/)
+})

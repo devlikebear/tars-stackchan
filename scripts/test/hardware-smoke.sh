@@ -189,6 +189,12 @@ run_curl -fsS -X POST \
   -d '{"name":"nod"}' \
   "$base_url/v1/motion"
 
+run_curl -fsS -X POST \
+  -H "Authorization: Bearer $token" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"hello stack-chan"}' \
+  "$base_url/v1/speech"
+
 cd "$repo_root/mcp-server"
 
 call_tool stackchan_get_status '{}'
@@ -196,3 +202,4 @@ call_tool stackchan_set_expression '{"emotion":"happy"}'
 call_tool stackchan_move_head '{"pan_deg":45,"tilt_deg":120,"speed":0.6}'
 call_tool stackchan_set_led '{"pattern":"solid","color":"#00AEEF","brightness":0.5}'
 call_tool stackchan_run_motion '{"name":"nod"}'
+call_tool stackchan_speak '{"text":"hello stack-chan"}'

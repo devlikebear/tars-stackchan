@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 type Tool struct {
@@ -46,6 +47,8 @@ var (
 
 	hexColorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 )
+
+const maxSpeechTextRunes = 240
 
 func ListTools() []Tool {
 	return []Tool{
@@ -85,6 +88,17 @@ func ListTools() []Tool {
 			InputSchema: objectSchema(map[string]any{
 				"name": map[string]any{"type": "string"},
 			}, []string{"name"}),
+		},
+		{
+			Name:        ToolSpeak,
+			Description: "Speak text through Stack-chan's configured speech voice.",
+			InputSchema: objectSchema(map[string]any{
+				"text": map[string]any{
+					"type":        "string",
+					"description": "Text to speak. Maximum 240 characters.",
+					"maxLength":   maxSpeechTextRunes,
+				},
+			}, []string{"text"}),
 		},
 	}
 }
@@ -162,6 +176,20 @@ func CallTool(ctx context.Context, bridge Bridge, name string, args json.RawMess
 		}
 		return jsonTextResult(result)
 
+	case ToolSpeak:
+		req, err := decodeStrict[SpeechRequest](args)
+		if err != nil {
+			return ToolCallResult{}, err
+		}
+		if err := validateSpeech(req); err != nil {
+			return ToolCallResult{}, err
+		}
+		result, err := bridge.Speak(ctx, req)
+		if err != nil {
+			return ToolCallResult{}, err
+		}
+		return jsonTextResult(result)
+
 	default:
 		return ToolCallResult{}, fmt.Errorf("unknown tool %q", name)
 	}
@@ -224,6 +252,16 @@ func validateLED(req LEDRequest) error {
 	}
 	if req.Brightness < 0 || req.Brightness > 1 {
 		return fmt.Errorf("LED brightness %.2f must be between 0.0 and 1.0", req.Brightness)
+	}
+	return nil
+}
+
+func validateSpeech(req SpeechRequest) error {
+	if strings.TrimSpace(req.Text) == "" {
+		return errors.New("speech text is required")
+	}
+	if utf8.RuneCountInString(req.Text) > maxSpeechTextRunes {
+		return fmt.Errorf("speech text must be %d characters or fewer", maxSpeechTextRunes)
 	}
 	return nil
 }

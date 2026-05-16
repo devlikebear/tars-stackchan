@@ -66,6 +66,7 @@ scripts/dev/check-firmware-upload-ready.sh
 
 The bridge MOD must avoid module names that collide with host firmware modules.
 The Stack-chan host already ships `http-server-service`; the bridge maps its retained service as `tars-http-server-service` and imports that name so the MOD does not accidentally load the host copy.
+If the device does not answer HTTP immediately after direct flash, a USB hard reset can bring Wi-Fi and the bridge API back without reflashing.
 
 ## Smoke Commands
 
@@ -74,6 +75,8 @@ export TARS_STACKCHAN_BASE_URL=http://stackchan.local
 export TARS_STACKCHAN_TOKEN="<local-token>"
 scripts/test/hardware-smoke.sh
 ```
+
+When `scripts/dev/upload-firmware.sh smoke` fails to reach the local API and a USB port is available, it hard-resets the device once with `uv run --with esptool esptool ... chip-id`, waits, and retries the smoke. Set `TARS_STACKCHAN_SMOKE_RETRY_USB_RESET=0` to disable this retry.
 
 ## Checklist
 
@@ -88,6 +91,7 @@ scripts/test/hardware-smoke.sh
 - [x] `stackchan_move_head` moves head and clamps unsafe tilt.
 - [x] `stackchan_set_led` changes LED.
 - [x] `stackchan_run_motion` runs `nod`.
+- [x] `stackchan_speak` sends a short speech request.
 
 ## Results
 
@@ -102,7 +106,7 @@ The bridge boot log reached:
 Successful HTTP status response:
 
 ```json
-{"connected":true,"device":"stackchan-k151","firmware":"tars-stackchan-dev","ip":"192.168.219.113","capabilities":["expression","head","leds","motion"]}
+{"connected":true,"device":"stackchan-k151","firmware":"tars-stackchan-dev","ip":"192.168.219.113","capabilities":["expression","head","leds","motion","speech"]}
 ```
 
 Successful hardware smoke command:
@@ -111,7 +115,9 @@ Successful hardware smoke command:
 TARS_STACKCHAN_BASE_URL=http://192.168.219.113 scripts/dev/upload-firmware.sh smoke
 ```
 
-The smoke covered raw HTTP requests and MCP tool calls for status, expression, head movement, LED, and motion. The unsafe `tilt_deg=120` input was clamped to `tilt_deg=85` by the firmware response.
+The smoke covered raw HTTP requests and MCP tool calls for status, expression, head movement, LED, motion, and speech. The unsafe `tilt_deg=120` input was clamped to `tilt_deg=85` by the firmware response.
+
+The speech endpoint returns as soon as the request is accepted. It starts `robot.say(...)` in the background so HTTP and MCP smoke tests do not block on TTS generation or playback.
 
 Missing and invalid bearer tokens were rejected with HTTP 401:
 
@@ -123,6 +129,6 @@ HTTP 401
 ## Known Limitations
 
 - The bridge uses a static local bearer token for MVP.
-- Camera, microphone, speech, NFC, IR, OTA, and multi-device flows are out of scope.
+- Camera, microphone, NFC, IR, OTA, and multi-device flows are out of scope.
 - The firmware overlay is tested by contract tests locally; full validation requires a real Stack-chan device.
 - `stackchan.local` did not resolve in this environment during the smoke; use the IP from the firmware log or status response until mDNS is verified.

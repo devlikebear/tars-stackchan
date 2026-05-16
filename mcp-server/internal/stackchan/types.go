@@ -8,6 +8,7 @@ const (
 	ToolMoveHead      = "stackchan_move_head"
 	ToolSetLED        = "stackchan_set_led"
 	ToolRunMotion     = "stackchan_run_motion"
+	ToolSpeak         = "stackchan_speak"
 
 	SafeTiltMin = 5
 	SafeTiltMax = 85
@@ -42,6 +43,10 @@ type MotionRequest struct {
 	Name string `json:"name"`
 }
 
+type SpeechRequest struct {
+	Text string `json:"text"`
+}
+
 type ActionResult struct {
 	OK     bool   `json:"ok"`
 	Action string `json:"action"`
@@ -54,4 +59,5 @@ type Bridge interface {
 	MoveHead(context.Context, HeadRequest) (ActionResult, error)
 	SetLED(context.Context, LEDRequest) (ActionResult, error)
 	RunMotion(context.Context, MotionRequest) (ActionResult, error)
+	Speak(context.Context, SpeechRequest) (ActionResult, error)
 }
