@@ -33,9 +33,14 @@ func ProbeHealth(ctx context.Context, baseURL string) error {
 	return nil
 }
 
-// dscacheutil is indirected for tests.
+// dscacheutilPath is the fixed macOS location of dscacheutil. Invoking it by
+// absolute path (instead of resolving via $PATH) closes the PATH-injection
+// vector (Sonar go:S4036); this code path is darwin-only anyway.
+const dscacheutilPath = "/usr/bin/dscacheutil"
+
+// dscacheutilLookup is indirected for tests.
 var dscacheutilLookup = func(ctx context.Context, hostname string) (string, error) {
-	out, err := exec.CommandContext(ctx, "dscacheutil", "-q", "host", "-a", "name", hostname).Output()
+	out, err := exec.CommandContext(ctx, dscacheutilPath, "-q", "host", "-a", "name", hostname).Output()
 	return string(out), err
 }
 
