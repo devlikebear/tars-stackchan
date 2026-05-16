@@ -1,6 +1,9 @@
 package tts
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func TestResolveAPIKeyPrecedence(t *testing.T) {
 	t.Setenv("TARS_STACKCHAN_GEMINI_API_KEY", "")
@@ -59,8 +62,11 @@ func TestResolveDefaults(t *testing.T) {
 	if cfg.SampleRate != DefaultSampleRate {
 		t.Fatalf("SampleRate = %d, want %d", cfg.SampleRate, DefaultSampleRate)
 	}
-	if cfg.CacheDir != DefaultCacheDir {
-		t.Fatalf("CacheDir = %q, want %q", cfg.CacheDir, DefaultCacheDir)
+	if cfg.CacheDir != DefaultCacheDir() {
+		t.Fatalf("CacheDir = %q, want %q", cfg.CacheDir, DefaultCacheDir())
+	}
+	if !filepath.IsAbs(cfg.CacheDir) {
+		t.Fatalf("default CacheDir %q must be absolute so the relay works as a launchd/brew service (CWD=/ read-only)", cfg.CacheDir)
 	}
 }
 

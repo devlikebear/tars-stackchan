@@ -2,6 +2,7 @@ package tts
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -18,8 +19,25 @@ type Config struct {
 	CacheDir         string
 }
 
-// DefaultCacheDir mirrors the argparse default for --cache-dir.
-const DefaultCacheDir = ".work/tts-cache"
+// relCacheDirFallback is used only when an absolute user cache dir cannot be
+// determined (very unusual). The original Python relay defaulted to this
+// repo-relative path because it was always run from the repo root; as a
+// launchd/brew service the working directory is "/" (read-only), so a
+// relative default makes every request fail with
+// "mkdir .work: read-only file system". DefaultCacheDir resolves an absolute,
+// writable location instead.
+const relCacheDirFallback = ".work/tts-cache"
+
+// DefaultCacheDir returns an absolute, writable cache directory suitable for
+// running as a background service (e.g. ~/Library/Caches/tars-stackchan/tts on
+// macOS). Falls back to the repo-relative path only if the user cache dir is
+// unavailable.
+func DefaultCacheDir() string {
+	if base, err := os.UserCacheDir(); err == nil && base != "" {
+		return filepath.Join(base, "tars-stackchan", "tts")
+	}
+	return relCacheDirFallback
+}
 
 // DefaultSampleRate mirrors the argparse default for --sample-rate.
 const DefaultSampleRate = 24000
@@ -95,7 +113,7 @@ func Resolve(f Flags) Config {
 		promptPrefix = os.Getenv("TARS_STACKCHAN_TTS_PROMPT_PREFIX")
 	}
 
-	cacheDir := firstNonEmpty(f.CacheDir, os.Getenv("TARS_STACKCHAN_TTS_CACHE"), DefaultCacheDir)
+	cacheDir := firstNonEmpty(f.CacheDir, os.Getenv("TARS_STACKCHAN_TTS_CACHE"), DefaultCacheDir())
 
 	sampleRate := f.SampleRate
 	if sampleRate <= 0 {
