@@ -1,10 +1,9 @@
 {
-  "include": [
-    "$(MODDABLE)/examples/manifest_mod.json",
-    "../../stackchan/services/http-server/manifest.json"
-  ],
+  "include": ["$(MODDABLE)/examples/manifest_mod.json"],
   "modules": {
-    "*": ["./mod", "./bridge-core"]
+    "*": ["./mod", "./bridge-core"],
+    "http-server-service": "./http-server-service",
+    "tars-listen": "./listen"
   },
   "config": {
     "tarsStackchan": {

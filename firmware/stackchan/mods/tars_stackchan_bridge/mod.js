@@ -1,4 +1,4 @@
-import config from 'mc/config'
+import config from 'mod/config'
 import Net from 'net'
 import { HttpServerService } from 'http-server-service'
 
@@ -17,7 +17,8 @@ const TOKEN = bridgeConfig.token ?? ''
 const DEVICE = bridgeConfig.device ?? 'stackchan-k151'
 const FIRMWARE = bridgeConfig.firmware ?? 'tars-stackchan-dev'
 const LED_NAME = bridgeConfig.ledName ?? 'a'
-const PORT = bridgeConfig.port
+const PORT = bridgeConfig.port ?? 80
+let server
 
 const FORWARD = Object.freeze({ y: 0, p: 0, r: 0 })
 const MOTION_STEPS = Object.freeze({
@@ -39,8 +40,13 @@ const MOTION_STEPS = Object.freeze({
   ],
 })
 
+function onLaunch() {
+  trace('[tars-stackchan] bypassing default setup launch\n')
+  return true
+}
+
 function onRobotCreated(robot) {
-  const server = new HttpServerService({ port: PORT })
+  server = new HttpServerService({ port: PORT })
 
   server.get('/v1/status', (c) =>
     c.json({
@@ -146,5 +152,6 @@ function getIP() {
 }
 
 export default {
+  onLaunch,
   onRobotCreated,
 }
