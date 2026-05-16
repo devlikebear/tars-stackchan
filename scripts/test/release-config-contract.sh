@@ -40,3 +40,10 @@ assert_contains "$goreleaser_config" "devlikebear"
 assert_contains "$goreleaser_config" "homebrew-tap"
 assert_contains "$goreleaser_config" "TARS_STACKCHAN_REPO_ROOT"
 assert_contains "$goreleaser_config" "stackchan_upload_firmware"
+
+# Phase 3: the Homebrew formula must register the Gemini TTS relay as a
+# brew-managed background service (brew services start tars-stackchan).
+assert_contains "$goreleaser_config" "service: |"
+assert_contains "$goreleaser_config" 'run [opt_bin/"tars-stackchan-control", "tts", "serve"]'
+assert_contains "$goreleaser_config" "keep_alive true"
+assert_contains "$goreleaser_config" "brew services start tars-stackchan"

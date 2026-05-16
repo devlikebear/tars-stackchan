@@ -121,7 +121,8 @@ re-flash when the Mac's DHCP address changes:
 ```bash
 export GEMINI_API_KEY="<google-ai-studio-api-key>"
 export TARS_STACKCHAN_TOKEN="<local-token>"
-tars-stackchan-control tts serve
+brew services start tars-stackchan      # background service, starts on login
+# dev alternative (foreground): tars-stackchan-control tts serve
 ```
 
 If mDNS does not resolve on your network, bake a fixed IP fallback by

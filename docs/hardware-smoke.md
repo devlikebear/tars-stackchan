@@ -76,8 +76,9 @@ without a re-flash:
 ```bash
 export GEMINI_API_KEY="<google-ai-studio-api-key>"
 export TARS_STACKCHAN_TOKEN="<local-token>"
-export TARS_STACKCHAN_TTS_VOICE=Kore
-tars-stackchan-control tts serve
+brew services start tars-stackchan      # auto-starts on login, restarts on crash
+# dev alternative (foreground): tars-stackchan-control tts serve
+tars-stackchan-control tts status        # relay + mDNS health
 ```
 
 The prepare helper bakes `config.tts.host = tars-stackchan-tts.local` by

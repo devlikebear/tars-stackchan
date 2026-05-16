@@ -95,13 +95,29 @@ func TestRunCommandTTSServeMissingToken(t *testing.T) {
 	}
 }
 
-func TestRunCommandTTSInstallNotImplemented(t *testing.T) {
+func TestRunCommandTTSInstallGuide(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := runCommand([]string{"tts", "install"}, &stdout, &stderr); code != 2 {
-		t.Fatalf("exit = %d, want 2", code)
+	if code := runCommand([]string{"tts", "install"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
 	}
-	if !strings.Contains(stderr.String(), "not implemented yet") {
-		t.Fatalf("stderr = %q", stderr.String())
+	out := stderr.String()
+	if !strings.Contains(out, "brew services start tars-stackchan") {
+		t.Fatalf("install guide missing brew services line: %q", out)
+	}
+	if !strings.Contains(out, "tars-stackchan-tts.local") {
+		t.Fatalf("install guide missing mDNS hostname: %q", out)
+	}
+}
+
+func TestRunCommandTTSStatusRelayDown(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	// Port 1 is unbindable/unreachable, so the health probe fails fast.
+	code := runCommand([]string{"tts", "status", "--port", "1"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1 (relay down)", code)
+	}
+	if !strings.Contains(stderr.String(), "relay: DOWN") {
+		t.Fatalf("stderr = %q, want relay DOWN", stderr.String())
 	}
 }
 
