@@ -167,6 +167,158 @@ func TestNewRejectsMissingBaseURL(t *testing.T) {
 	}
 }
 
+func TestCameraSnapshotSendsAuthAndMaxWidthQuery(t *testing.T) {
+	jpeg := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/v1/camera/snapshot" {
+			t.Fatalf("path = %s, want /v1/camera/snapshot", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("max_width"); got != "320" {
+			t.Fatalf("max_width = %q, want 320", got)
+		}
+		if r.Header.Get("Authorization") != "Bearer secret" {
+			t.Fatalf("authorization = %q, want Bearer secret", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write(jpeg)
+	}))
+	defer server.Close()
+
+	bridge, err := New(Config{BaseURL: server.URL, Token: "secret"})
+	if err != nil {
+		t.Fatalf("new bridge: %v", err)
+	}
+	snap, err := bridge.CameraSnapshot(context.Background(), stackchan.SnapshotOptions{MaxWidth: 320})
+	if err != nil {
+		t.Fatalf("camera snapshot: %v", err)
+	}
+	if snap.ContentType != "image/jpeg" {
+		t.Fatalf("content type = %q, want image/jpeg", snap.ContentType)
+	}
+	if string(snap.Data) != string(jpeg) {
+		t.Fatalf("data = %x, want %x", snap.Data, jpeg)
+	}
+}
+
+func TestCameraSnapshotOmitsQueryWhenDefault(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RawQuery != "" {
+			t.Fatalf("raw query = %q, want empty", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write([]byte{0xFF, 0xD8, 0xFF})
+	}))
+	defer server.Close()
+
+	bridge, _ := New(Config{BaseURL: server.URL, Token: "secret"})
+	if _, err := bridge.CameraSnapshot(context.Background(), stackchan.SnapshotOptions{}); err != nil {
+		t.Fatalf("camera snapshot: %v", err)
+	}
+}
+
+func TestAudioClipSendsMsQueryAndPropagatesDuration(t *testing.T) {
+	wav := []byte("RIFF\x24\x00\x00\x00WAVE")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/audio/clip" {
+			t.Fatalf("path = %s, want /v1/audio/clip", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("ms"); got != "1500" {
+			t.Fatalf("ms = %q, want 1500", got)
+		}
+		if r.Header.Get("Authorization") != "Bearer secret" {
+			t.Fatalf("authorization = %q, want Bearer secret", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "audio/wav")
+		_, _ = w.Write(wav)
+	}))
+	defer server.Close()
+
+	bridge, _ := New(Config{BaseURL: server.URL, Token: "secret"})
+	clip, err := bridge.AudioClip(context.Background(), stackchan.AudioOptions{DurationMs: 1500})
+	if err != nil {
+		t.Fatalf("audio clip: %v", err)
+	}
+	if clip.ContentType != "audio/wav" || string(clip.Data) != string(wav) || clip.DurationMs != 1500 {
+		t.Fatalf("clip = %#v", clip)
+	}
+}
+
+func TestSensorsParsesV1SensorsWithAuth(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/sensors" {
+			t.Fatalf("%s %s, want GET /v1/sensors", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer secret" {
+			t.Fatalf("authorization = %q, want Bearer secret", r.Header.Get("Authorization"))
+		}
+		writeJSON(t, w, stackchan.SensorState{Motion: true, SoundLevel: 0.42, TS: 1747396800000})
+	}))
+	defer server.Close()
+
+	bridge, _ := New(Config{BaseURL: server.URL, Token: "secret"})
+	state, err := bridge.Sensors(context.Background())
+	if err != nil {
+		t.Fatalf("sensors: %v", err)
+	}
+	if !state.Motion || state.SoundLevel != 0.42 || state.TS != 1747396800000 {
+		t.Fatalf("state = %#v", state)
+	}
+}
+
+func TestPerceptionRequiresToken(t *testing.T) {
+	bridge, err := New(Config{BaseURL: "http://stackchan.local"})
+	if err != nil {
+		t.Fatalf("new bridge: %v", err)
+	}
+	if _, err := bridge.CameraSnapshot(context.Background(), stackchan.SnapshotOptions{}); err == nil ||
+		!strings.Contains(err.Error(), "TARS_STACKCHAN_TOKEN") {
+		t.Fatalf("error = %v, want missing token error", err)
+	}
+}
+
+func TestCameraSnapshotSurfacesFirmwareError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"camera unavailable"}`, http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	bridge, _ := New(Config{BaseURL: server.URL, Token: "secret"})
+	_, err := bridge.CameraSnapshot(context.Background(), stackchan.SnapshotOptions{})
+	if err == nil || !strings.Contains(err.Error(), "503") || !strings.Contains(err.Error(), "camera unavailable") {
+		t.Fatalf("error = %v, want 503 + firmware body", err)
+	}
+}
+
+func TestCameraSnapshotRejectsEmptyBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+	}))
+	defer server.Close()
+
+	bridge, _ := New(Config{BaseURL: server.URL, Token: "secret"})
+	_, err := bridge.CameraSnapshot(context.Background(), stackchan.SnapshotOptions{})
+	if err == nil || !strings.Contains(err.Error(), "empty body") {
+		t.Fatalf("error = %v, want empty body error", err)
+	}
+}
+
+func TestCameraSnapshotRejectsOverLimitBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write(make([]byte, maxMediaBytes+1))
+	}))
+	defer server.Close()
+
+	bridge, _ := New(Config{BaseURL: server.URL, Token: "secret"})
+	_, err := bridge.CameraSnapshot(context.Background(), stackchan.SnapshotOptions{})
+	if err == nil || !strings.Contains(err.Error(), "limit") {
+		t.Fatalf("error = %v, want over-limit error", err)
+	}
+}
+
 func writeJSON(t *testing.T, w http.ResponseWriter, value any) {
 	t.Helper()
 	w.Header().Set("Content-Type", "application/json")

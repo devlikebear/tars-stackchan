@@ -2,10 +2,23 @@ package mock
 
 import (
 	"context"
+	_ "embed"
 	"sync"
+	"time"
 
 	"github.com/devlikebear/tars-stackchan/mcp-server/internal/stackchan"
 )
+
+var (
+	_ stackchan.Bridge           = (*Bridge)(nil)
+	_ stackchan.PerceptionBridge = (*Bridge)(nil)
+)
+
+//go:embed testdata/sample.jpg
+var sampleJPEG []byte
+
+//go:embed testdata/sample.wav
+var sampleWAV []byte
 
 type Bridge struct {
 	mu         sync.Mutex
@@ -31,6 +44,8 @@ func New() *Bridge {
 				"leds",
 				"motion",
 				"speech",
+				"camera",
+				"microphone",
 			},
 		},
 		expression: stackchan.ExpressionRequest{Emotion: "neutral"},
@@ -78,4 +93,20 @@ func (b *Bridge) Speak(_ context.Context, req stackchan.SpeechRequest) (stackcha
 	defer b.mu.Unlock()
 	b.speech = req
 	return stackchan.ActionResult{OK: true, Action: "speak", State: req}, nil
+}
+
+// CameraSnapshot returns a deterministic, valid JPEG fixture so UI/CI flows
+// exercise the perception path without hardware.
+func (b *Bridge) CameraSnapshot(_ context.Context, _ stackchan.SnapshotOptions) (stackchan.CameraSnapshot, error) {
+	return stackchan.CameraSnapshot{ContentType: "image/jpeg", Data: sampleJPEG}, nil
+}
+
+// AudioClip returns a deterministic, valid 16 kHz mono WAV fixture.
+func (b *Bridge) AudioClip(_ context.Context, opts stackchan.AudioOptions) (stackchan.AudioClip, error) {
+	return stackchan.AudioClip{ContentType: "audio/wav", Data: sampleWAV, DurationMs: opts.DurationMs}, nil
+}
+
+// Sensors returns a stable, media-free trigger state with a real timestamp.
+func (b *Bridge) Sensors(_ context.Context) (stackchan.SensorState, error) {
+	return stackchan.SensorState{Motion: false, SoundLevel: 0, TS: time.Now().UnixMilli()}, nil
 }

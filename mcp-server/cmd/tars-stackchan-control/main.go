@@ -44,6 +44,8 @@ func runCommand(args []string, stdout io.Writer, stderr io.Writer) int {
 			return 0
 		case "tts":
 			return runTTS(args[1:], stderr)
+		case "perceive":
+			return runPerceive(args[1:], stderr)
 		default:
 			fmt.Fprintf(stderr, "unknown command %q\n\n", args[0])
 			printUsage(stderr)
@@ -121,6 +123,7 @@ func printUsage(stdout io.Writer) {
 	fmt.Fprintf(stdout, `Usage:
   %[1]s              run the local web control console
   %[1]s tts serve    run the Gemini TTS relay (mDNS in Phase 2)
+  %[1]s perceive serve  run the background sensory loop (Embodied Bot Phase 2)
   %[1]s --version     print version
 
 Environment:

@@ -4,6 +4,7 @@ set -eu
 repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 lock_file="$repo_root/firmware/stackchan/upstream.lock"
 overlay_dir="$repo_root/firmware/stackchan/mods/tars_stackchan_bridge"
+host_overlay_dir="$repo_root/firmware/stackchan/host-overlay/imagein-camera-cores3"
 
 upstream_repo="$(awk -F= '$1 == "repository" { print $2 }' "$lock_file")"
 upstream_commit="$(awk -F= '$1 == "commit" { print $2 }' "$lock_file")"
@@ -56,6 +57,13 @@ mkdir -p "$target_dir/firmware/mods"
 rm -rf "$target_dir/firmware/mods/tars_stackchan_bridge"
 cp -R "$overlay_dir" "$target_dir/firmware/mods/tars_stackchan_bridge"
 
+# Spike S host overlay: project-vendored patched Moddable camera module that
+# hands the shared I2C bus off before esp_camera_init (M5 In_I2C.release()
+# pattern). Copied next to manifest_local.json so the host manifest can
+# include it with a relative path.
+rm -rf "$target_dir/firmware/stackchan/tars-imagein-camera"
+cp -R "$host_overlay_dir" "$target_dir/firmware/stackchan/tars-imagein-camera"
+
 manifest="$target_dir/firmware/mods/tars_stackchan_bridge/manifest.json"
 host_manifest="$target_dir/firmware/stackchan/manifest_local.json"
 
@@ -82,7 +90,42 @@ const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 manifest.config ??= {}
 
 if (target === 'esp32/m5stack_cores3') {
-  manifest.include = ['./manifest_m5stackchan_cores3.json']
+  // Perception (Embodied Bot Phase 1): pull the Moddable ECMA-419 camera
+  // module into the HOST firmware build. esp32-camera + esp_jpeg are native
+  // IDF components, so they must be compiled into the host (a runtime MOD
+  // cannot add native code) -- this is why camera capture requires a host
+  // deploy flash, not `mod`-only. The CoreS3 SDK target manifest already
+  // supplies the GC0308 pin map and QVGA framesize; this only adds the
+  // module so the bridge MOD can `import "embedded:io/image/in/camera"`.
+  // No upstream stack-chan source files are modified.
+  // Spike S fix (I2C hand-off): include the project-vendored camera module
+  // overlay instead of the stock SDK one. The overlay manifest itself
+  // includes the SDK imagein/camera manifest (esp32-camera/esp_jpeg deps +
+  // include dirs) and only overrides the esp32 native module with a patched
+  // camera.c that releases the shared internal I2C bus immediately before
+  // esp_camera_init (mirrors M5Unified's In_I2C.release()). Copied to
+  // ./tars-imagein-camera by the overlay copy step above.
+  manifest.include = [
+    './manifest_m5stackchan_cores3.json',
+    './tars-imagein-camera/manifest.json',
+    '$(MODDABLE)/modules/io/audioin/manifest.json',
+  ]
+  // Camera SCCB now CREATES its bus on the real pins AFTER the hand-off
+  // releases Moddable's bus, so keep the SDK target's GC0308 pin map (sda
+  // 12 / scl 11 / i2c_port 1 / d0..d7) via manifest deep-merge — only set
+  // framesize/jpeg here. (The earlier sda/scl=-1+i2c_port=0 "share the bus
+  // concurrently" config did not work; CoreS3 needs the temporal hand-off.)
+  manifest.config.camera = {
+    frameSize: 'QVGA',
+    jpeg: { quality: 12 },
+  }
+  // Microphone for /v1/audio/clip. embedded:io/audio/in is also a host
+  // (native IDF: esp_driver_i2s) module, so it ships with the host build
+  // alongside the camera. 16 kHz / 16-bit matches the protocol's WAV format.
+  manifest.config.audioIn = {
+    sampleRate: 16000,
+    bitsPerSample: 16,
+  }
   manifest.config.driver = {
     type: 'm5stackchan',
     panId: 1,

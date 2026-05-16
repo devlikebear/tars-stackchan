@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -17,6 +18,7 @@ import (
 	httpbridge "github.com/devlikebear/tars-stackchan/mcp-server/internal/bridge/http"
 	"github.com/devlikebear/tars-stackchan/mcp-server/internal/bridge/mock"
 	"github.com/devlikebear/tars-stackchan/mcp-server/internal/buildinfo"
+	"github.com/devlikebear/tars-stackchan/mcp-server/internal/perception"
 	"github.com/devlikebear/tars-stackchan/mcp-server/internal/stackchan"
 	"github.com/devlikebear/tars-stackchan/mcp-server/internal/tts"
 )
@@ -176,6 +178,7 @@ func runDoctorCommand(args []string, stdout io.Writer, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	skipDevice := flags.Bool("skip-device", false, "skip the HTTP status probe")
 	skipTTS := flags.Bool("skip-tts", false, "skip the TTS speech-path probes")
+	skipPerception := flags.Bool("skip-perception", false, "skip the perception-loop / owner / TARS checks")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -233,6 +236,12 @@ func runDoctorCommand(args []string, stdout io.Writer, stderr io.Writer) int {
 		}
 	}
 
+	if !*skipPerception {
+		if !runPerceptionDoctor(stdout) {
+			ok = false
+		}
+	}
+
 	if !*skipTTS {
 		if !runTTSDoctor(stdout) {
 			ok = false
@@ -243,6 +252,55 @@ func runDoctorCommand(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// runPerceptionDoctor reports the Embodied Bot perception state. It never
+// probes /v1/camera/snapshot — that hard-resets a real CoreS3 (Spike S:
+// shared I2C bus) — so vision is reported from config/known limitation only.
+func runPerceptionDoctor(stdout io.Writer) bool {
+	ok := true
+	cfg := perception.LoadConfig()
+
+	profile, err := perception.OwnerStore{Dir: cfg.OwnerDir}.Load()
+	switch {
+	case err != nil:
+		fmt.Fprintf(stdout, "owner: error (%v)\n", err)
+		ok = false
+	case profile.Enrolled():
+		fmt.Fprintf(stdout, "owner: enrolled name=%q faces=%d voices=%d\n",
+			profile.Name, len(profile.FaceHashes), len(profile.VoiceHashes))
+	default:
+		fmt.Fprintln(stdout, "owner: not enrolled")
+		fmt.Fprintln(stdout, "hint: run `tars-stackchan-control perceive enroll` so the bot can tell owner from stranger (otherwise everyone is 'unknown')")
+	}
+
+	if cfg.CameraEnabled {
+		fmt.Fprintln(stdout, "perception_camera: enabled")
+		fmt.Fprintln(stdout, "hint: real M5Stack CoreS3 camera capture resets the device (Spike S: camera SCCB shares the internal I2C bus). Set TARS_STACKCHAN_PERCEIVE_CAMERA=off for audio-only operation until the bus-handle bridge fix lands")
+	} else {
+		fmt.Fprintln(stdout, "perception_camera: disabled (audio-only mode)")
+	}
+
+	if !cfg.TARSConfigured() {
+		fmt.Fprintln(stdout, "tars_webhook: not configured")
+		fmt.Fprintln(stdout, "hint: set TARS_STACKCHAN_TARS_BASE_URL and TARS_STACKCHAN_TARS_WEBHOOK_CHANNEL so observations reach the brain; without it the loop uses a log-only sink")
+	} else {
+		fmt.Fprintf(stdout, "tars_webhook: configured channel=%s\n", cfg.TARSWebhookChannel)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, cfg.TARSBaseURL, nil)
+		resp, perr := http.DefaultClient.Do(req)
+		if perr != nil {
+			fmt.Fprintf(stdout, "tars_webhook: unreachable (%v)\n", perr)
+			fmt.Fprintf(stdout, "hint: is TARS running and reachable at %s ?\n", cfg.TARSBaseURL)
+			ok = false
+		} else {
+			resp.Body.Close()
+			fmt.Fprintf(stdout, "tars_webhook: TARS reachable (HTTP %d at %s)\n", resp.StatusCode, cfg.TARSBaseURL)
+		}
+	}
+
+	return ok
 }
 
 // runTTSDoctor diagnoses the speech path end-to-end (token, Gemini key, relay

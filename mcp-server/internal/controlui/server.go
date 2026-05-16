@@ -58,6 +58,8 @@ func NewServer(config ServerConfig) *Server {
 	server.mux.HandleFunc("/api/leds", server.handleTool(stackchan.ToolSetLED))
 	server.mux.HandleFunc("/api/motion", server.handleTool(stackchan.ToolRunMotion))
 	server.mux.HandleFunc("/api/speech", server.handleTool(stackchan.ToolSpeak))
+	server.mux.HandleFunc("/api/emotion", server.handleEmotion)
+	server.mux.HandleFunc("/api/perceive/status", server.handlePerceiveStatus)
 
 	return server
 }

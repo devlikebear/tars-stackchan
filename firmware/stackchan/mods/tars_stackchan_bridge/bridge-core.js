@@ -4,6 +4,17 @@ export const SAFE_PAN_MIN = -90
 export const SAFE_PAN_MAX = 90
 export const MAX_SPEECH_TEXT_LENGTH = 240
 export const DEFAULT_CAPABILITIES = ['expression', 'head', 'leds', 'motion', 'speech']
+// Perception capabilities are advertised only when the host build includes
+// the camera/microphone modules (CoreS3 host deploy). See patch 0002.
+export const PERCEPTION_CAPABILITIES = ['camera', 'microphone']
+
+export const DEFAULT_SNAPSHOT_MAX_WIDTH = 320
+export const SNAPSHOT_MIN_WIDTH = 96
+export const SNAPSHOT_MAX_WIDTH = 640
+
+export const DEFAULT_AUDIO_CLIP_MS = 1500
+export const MIN_AUDIO_CLIP_MS = 250
+export const MAX_AUDIO_CLIP_MS = 3000
 
 const DEG_TO_RAD = Math.PI / 180
 const HEAD_NEUTRAL_TILT_DEG = 45
@@ -127,6 +138,30 @@ export function normalizeSpeechRequest(payload) {
     throw new Error('volume must be between 0.0 and 1.0')
   }
   return { text, volume }
+}
+
+export function parseSnapshotOptions(query) {
+  const raw = query?.max_width
+  if (raw === undefined || raw === null || raw === '') {
+    return { maxWidth: DEFAULT_SNAPSHOT_MAX_WIDTH }
+  }
+  const value = Number(raw)
+  if (!Number.isFinite(value)) {
+    throw new Error('max_width must be a number')
+  }
+  return { maxWidth: clamp(Math.round(value), SNAPSHOT_MIN_WIDTH, SNAPSHOT_MAX_WIDTH) }
+}
+
+export function parseAudioClipOptions(query) {
+  const raw = query?.ms
+  if (raw === undefined || raw === null || raw === '') {
+    return { ms: DEFAULT_AUDIO_CLIP_MS }
+  }
+  const value = Number(raw)
+  if (!Number.isFinite(value)) {
+    throw new Error('ms must be a number')
+  }
+  return { ms: clamp(Math.round(value), MIN_AUDIO_CLIP_MS, MAX_AUDIO_CLIP_MS) }
 }
 
 export function actionResponse(action, state = undefined) {

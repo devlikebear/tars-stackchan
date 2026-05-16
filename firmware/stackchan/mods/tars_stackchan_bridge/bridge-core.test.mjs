@@ -2,6 +2,12 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  DEFAULT_AUDIO_CLIP_MS,
+  DEFAULT_SNAPSHOT_MAX_WIDTH,
+  MAX_AUDIO_CLIP_MS,
+  MIN_AUDIO_CLIP_MS,
+  SNAPSHOT_MAX_WIDTH,
+  SNAPSHOT_MIN_WIDTH,
   actionResponse,
   clampTiltDeg,
   isAuthorized,
@@ -10,6 +16,8 @@ import {
   normalizeLEDRequest,
   normalizeMotionRequest,
   normalizeSpeechRequest,
+  parseAudioClipOptions,
+  parseSnapshotOptions,
 } from './bridge-core.js'
 
 test('bearer token auth requires an exact configured token match', () => {
@@ -95,4 +103,30 @@ test('action response keeps the firmware response shape aligned with the MCP bri
     action: 'move_head',
     state: { tilt_deg: 85 },
   })
+})
+
+test('snapshot options default when max_width is absent or empty', () => {
+  assert.deepEqual(parseSnapshotOptions(undefined), { maxWidth: DEFAULT_SNAPSHOT_MAX_WIDTH })
+  assert.deepEqual(parseSnapshotOptions({}), { maxWidth: DEFAULT_SNAPSHOT_MAX_WIDTH })
+  assert.deepEqual(parseSnapshotOptions({ max_width: '' }), { maxWidth: DEFAULT_SNAPSHOT_MAX_WIDTH })
+})
+
+test('snapshot options clamp max_width to the supported range', () => {
+  assert.equal(parseSnapshotOptions({ max_width: '9999' }).maxWidth, SNAPSHOT_MAX_WIDTH)
+  assert.equal(parseSnapshotOptions({ max_width: '1' }).maxWidth, SNAPSHOT_MIN_WIDTH)
+  assert.equal(parseSnapshotOptions({ max_width: '321.7' }).maxWidth, 322)
+  assert.throws(() => parseSnapshotOptions({ max_width: 'wide' }), /max_width must be a number/)
+})
+
+test('audio clip options default when ms is absent or empty', () => {
+  assert.deepEqual(parseAudioClipOptions(undefined), { ms: DEFAULT_AUDIO_CLIP_MS })
+  assert.deepEqual(parseAudioClipOptions({}), { ms: DEFAULT_AUDIO_CLIP_MS })
+  assert.deepEqual(parseAudioClipOptions({ ms: '' }), { ms: DEFAULT_AUDIO_CLIP_MS })
+})
+
+test('audio clip options clamp ms to the safe range', () => {
+  assert.equal(parseAudioClipOptions({ ms: '99999' }).ms, MAX_AUDIO_CLIP_MS)
+  assert.equal(parseAudioClipOptions({ ms: '1' }).ms, MIN_AUDIO_CLIP_MS)
+  assert.equal(parseAudioClipOptions({ ms: '1500' }).ms, 1500)
+  assert.throws(() => parseAudioClipOptions({ ms: 'soon' }), /ms must be a number/)
 })

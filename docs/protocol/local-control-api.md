@@ -41,10 +41,17 @@ Response:
     "head",
     "leds",
     "motion",
-    "speech"
+    "speech",
+    "camera",
+    "microphone"
   ]
 }
 ```
+
+`camera` and `microphone` appear in `capabilities` only when the firmware
+build includes the perception modules and the hardware exposes them (M5Stack
+CoreS3). Clients must treat them as optional and degrade gracefully when
+absent.
 
 ## Expression
 
@@ -167,6 +174,66 @@ Request:
 
 `text` is required and must be 240 characters or fewer. `volume` is optional and normalized to `0.0..1.0`; when omitted, firmware uses Stack-chan's configured TTS volume. Firmware sends both values through Stack-chan's configured `robot.say(...)` speech voice.
 
+## Camera Snapshot
+
+```http
+GET /v1/camera/snapshot?max_width=320
+Authorization: Bearer <TARS_STACKCHAN_TOKEN>
+```
+
+Captures a single still frame from the CoreS3 camera.
+
+- Response: `200` with `Content-Type: image/jpeg` and the JPEG bytes as the body.
+- `max_width` is optional. Firmware may clamp it to a supported framesize
+  (capture defaults to QVGA 320x240). Firmware is not required to honor
+  arbitrary sizes; it picks the nearest supported framesize ≤ `max_width`.
+- The firmware bounds resolution and JPEG quality (manifest config) so a
+  snapshot stays small enough for the local network and the cloud vision call.
+- Requires the camera capability. If the build/hardware lacks a camera, return
+  a non-2xx with `{ "error": "camera unavailable" }`.
+
+## Audio Clip
+
+```http
+GET /v1/audio/clip?ms=1500
+Authorization: Bearer <TARS_STACKCHAN_TOKEN>
+```
+
+Records a short clip from the microphone and returns it.
+
+- Response: `200` with `Content-Type: audio/wav` and a PCM WAV body
+  (16 kHz, 16-bit, mono — matches the firmware `audioIn` config).
+- `ms` is optional (default `1500`). Firmware clamps it to a safe maximum
+  (recommended `≤ 3000`) to bound memory and bandwidth.
+- One recording at a time. If a capture is already in progress, return a
+  non-2xx with `{ "error": "microphone busy" }`.
+- Requires the microphone capability.
+
+## Sensors
+
+```http
+GET /v1/sensors
+Authorization: Bearer <TARS_STACKCHAN_TOKEN>
+```
+
+Lightweight state for the perception loop's event trigger. Cheap to poll
+(e.g. ~1 Hz); does not capture media.
+
+Response:
+
+```json
+{
+  "motion": false,
+  "sound_level": 0.07,
+  "ts": 1747396800000
+}
+```
+
+- `motion` (bool): firmware-side movement hint when available (e.g. derived
+  from the IMU / scene change); `false` when not determinable.
+- `sound_level` (float, `0.0..1.0`): normalized recent input level.
+- `ts` (int): firmware clock in unix milliseconds.
+
 ## Action Response
 
 Mutating endpoints return an action result:
@@ -215,12 +282,13 @@ POST /v1/head
 POST /v1/leds
 POST /v1/motion
 POST /v1/speech
+GET  /v1/camera/snapshot
+GET  /v1/audio/clip
+GET  /v1/sensors
 ```
 
 Future endpoints:
 
 ```text
 POST /v1/ir/send
-GET  /v1/sensors
-GET  /v1/camera/snapshot
 ```

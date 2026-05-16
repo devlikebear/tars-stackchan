@@ -48,6 +48,32 @@ test('HTTP response headers never pass undefined values to Moddable Headers', as
   assert.doesNotMatch(source, /for \(const \[key, value\] of Object\.entries\(options\.headers\)\) {\n\s+headers\.set\(key, value\)/)
 })
 
+test('bridge mod ships the perception capture endpoints and module', async () => {
+  const manifest = JSON.parse(await readFile(join(modDir, 'manifest.json'), 'utf8'))
+  const source = await readFile(join(modDir, 'mod.js'), 'utf8')
+
+  assert.ok(manifest.modules['*'].includes('./perception'))
+  assert.match(source, /from\s+['"]\.\/perception['"]/)
+  assert.match(source, /server\.get\('\/v1\/camera\/snapshot'/)
+  assert.match(source, /server\.get\('\/v1\/audio\/clip'/)
+  assert.match(source, /server\.get\('\/v1\/sensors'/)
+  // Capture endpoints must be authenticated (only /v1/status is open).
+  assert.match(source, /server\.get\('\/v1\/camera\/snapshot',\s*withAuth\(/)
+  assert.match(source, /server\.get\('\/v1\/audio\/clip',\s*withAuth\(/)
+  // Snapshot/clip return binary bodies, not JSON.
+  assert.match(source, /c\.body\(jpeg,\s*'image\/jpeg'\)/)
+  assert.match(source, /c\.body\(wav,\s*'audio\/wav'\)/)
+})
+
+test('perception capture is isolated from the pure request module', async () => {
+  const core = await readFile(join(modDir, 'bridge-core.js'), 'utf8')
+  // bridge-core stays unit-testable under plain Node: no native imports.
+  assert.doesNotMatch(core, /embedded:io\//)
+  const perception = await readFile(join(modDir, 'perception.js'), 'utf8')
+  assert.match(perception, /from\s+['"]embedded:io\/image\/in\/camera['"]/)
+  assert.match(perception, /from\s+['"]embedded:io\/audio\/in['"]/)
+})
+
 test('speech route responds without waiting for TTS playback to finish', async () => {
   const source = await readFile(join(modDir, 'mod.js'), 'utf8')
 
