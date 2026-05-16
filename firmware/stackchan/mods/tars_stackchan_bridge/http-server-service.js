@@ -20,6 +20,16 @@ class Request {
     return this.raw.headers.get(key.toLowerCase())
   }
 
+  query(key) {
+    const url = this.raw.url
+    const params = url?.searchParams
+    if (params && typeof params.get === 'function') {
+      const value = params.get(key)
+      return value === null ? undefined : value
+    }
+    return undefined
+  }
+
   async text() {
     return await this.raw.text()
   }
@@ -108,6 +118,14 @@ class Context {
   json(json, status) {
     this.#headers.set('content-type', 'application/json')
     return new Response(JSON.stringify(json), {
+      status: status ?? this.#status,
+      headers: Object.fromEntries(this.#headers.entries()),
+    })
+  }
+
+  body(buffer, contentType, status) {
+    this.#headers.set('content-type', contentType)
+    return new Response(buffer, {
       status: status ?? this.#status,
       headers: Object.fromEntries(this.#headers.entries()),
     })

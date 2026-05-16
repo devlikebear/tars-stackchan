@@ -1,0 +1,12 @@
+{
+	"include": [
+		"$(MODDABLE)/modules/io/imagein/camera/manifest.json"
+	],
+	"platforms": {
+		"esp32": {
+			"modules": {
+				"embedded:io/image/in/camera": "./camera"
+			}
+		}
+	}
+}

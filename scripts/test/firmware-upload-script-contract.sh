@@ -36,6 +36,25 @@ assert_contains "$upload_script" "must not import the host headers module"
 
 assert_contains "$prepare_script" "scripts/dev/upload-firmware.sh"
 assert_contains "$prepare_script" "manifest_m5stackchan_cores3.json"
+# Embodied Bot Phase 1: the CoreS3 host manifest must pull the Moddable
+# ECMA-419 camera module into the host build (esp32-camera/esp_jpeg are
+# native IDF deps; a runtime MOD cannot add them). The bridge MOD imports
+# embedded:io/image/in/camera for /v1/camera/snapshot.
+# Spike S fix (I2C hand-off): the host build uses the project-vendored
+# camera overlay (patched camera.c releases the shared I2C bus before
+# esp_camera_init) instead of the stock SDK module. The overlay manifest
+# still pulls esp32-camera/esp_jpeg via the SDK manifest it includes.
+assert_contains "$prepare_script" "host_overlay_dir="
+assert_contains "$prepare_script" 'cp -R "$host_overlay_dir" "$target_dir/firmware/stackchan/tars-imagein-camera"'
+assert_contains "$prepare_script" "./tars-imagein-camera/manifest.json"
+assert_contains "$prepare_script" '$(MODDABLE)/modules/io/audioin/manifest.json'
+assert_contains "$prepare_script" "manifest.config.camera = {"
+assert_contains "$prepare_script" "frameSize: 'QVGA'"
+# The overlay's patched camera.c performs the M5-style I2C hand-off.
+assert_contains "$repo_root/firmware/stackchan/host-overlay/imagein-camera-cores3/camera.c" "tarsReleaseSharedI2C"
+assert_contains "$repo_root/firmware/stackchan/host-overlay/imagein-camera-cores3/camera.c" "i2c_del_master_bus"
+assert_contains "$prepare_script" "manifest.config.audioIn = {"
+assert_contains "$prepare_script" "sampleRate: 16000"
 assert_contains "$prepare_script" "type: 'm5stackchan'"
 assert_contains "$prepare_script" "led.head"
 assert_contains "$prepare_script" "servoPower"

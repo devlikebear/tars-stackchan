@@ -4,6 +4,7 @@ import { HttpServerService } from 'tars-http-server-service'
 
 import {
   DEFAULT_CAPABILITIES,
+  PERCEPTION_CAPABILITIES,
   actionResponse,
   isAuthorized,
   normalizeExpressionRequest,
@@ -11,7 +12,10 @@ import {
   normalizeLEDRequest,
   normalizeMotionRequest,
   normalizeSpeechRequest,
+  parseAudioClipOptions,
+  parseSnapshotOptions,
 } from './bridge-core'
+import { captureJpeg, recordWavClip } from './perception'
 
 const bridgeConfig = config.tarsStackchan ?? {}
 const TOKEN = bridgeConfig.token ?? ''
@@ -57,9 +61,29 @@ function onRobotCreated(robot) {
       firmware: FIRMWARE,
       battery_percent: undefined,
       ip: getIP(),
-      capabilities: DEFAULT_CAPABILITIES,
+      capabilities: [...DEFAULT_CAPABILITIES, ...PERCEPTION_CAPABILITIES],
     }),
   )
+
+  server.get('/v1/camera/snapshot', withAuth(async (c) => {
+    const { maxWidth } = parseSnapshotOptions({ max_width: c.req.query('max_width') })
+    const jpeg = await captureJpeg({ maxWidth })
+    return c.body(jpeg, 'image/jpeg')
+  }))
+
+  server.get('/v1/audio/clip', withAuth(async (c) => {
+    const { ms } = parseAudioClipOptions({ ms: c.req.query('ms') })
+    const wav = await recordWavClip(ms)
+    return c.body(wav, 'audio/wav')
+  }))
+
+  server.get('/v1/sensors', withAuth((c) =>
+    // Phase 1 placeholder: cheap to poll, never captures media. motion is
+    // false when not determinable (per protocol); sound_level stays 0 to
+    // avoid contending with the single-recording /v1/audio/clip path. The
+    // Phase 2 perception loop can enrich this without a protocol change.
+    c.json({ motion: false, sound_level: 0, ts: Date.now() }),
+  ))
 
   server.post('/v1/expression', withAuth(async (c) => {
     const request = normalizeExpressionRequest(await readJSON(c))

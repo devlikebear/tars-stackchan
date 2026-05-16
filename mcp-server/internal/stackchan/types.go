@@ -81,6 +81,55 @@ type Bridge interface {
 	Speak(context.Context, SpeechRequest) (ActionResult, error)
 }
 
+// SnapshotOptions and AudioOptions are perception capture inputs. Zero values
+// mean "let the firmware use its configured default".
+type SnapshotOptions struct {
+	// MaxWidth is an upper bound; firmware picks the nearest supported
+	// framesize. 0 means use the firmware default (QVGA).
+	MaxWidth int
+}
+
+type AudioOptions struct {
+	// DurationMs is the requested clip length. 0 means the firmware default
+	// (1500ms). Firmware clamps to its safe maximum.
+	DurationMs int
+}
+
+// CameraSnapshot is a single still frame. Data is the raw image body exactly
+// as the firmware returned it (JPEG); no decoding is performed here, so
+// dimensions are intentionally not surfaced (we do not have them without
+// decoding and must not fabricate them).
+type CameraSnapshot struct {
+	ContentType string
+	Data        []byte
+}
+
+// AudioClip is a short recorded clip. Data is the raw WAV body; DurationMs is
+// the duration that was requested (the firmware framing matches it).
+type AudioClip struct {
+	ContentType string
+	Data        []byte
+	DurationMs  int
+}
+
+// SensorState is the lightweight, pollable trigger state. Field tags match the
+// /v1/sensors protocol body.
+type SensorState struct {
+	Motion     bool    `json:"motion"`
+	SoundLevel float64 `json:"sound_level"`
+	TS         int64   `json:"ts"`
+}
+
+// PerceptionBridge is an OPTIONAL capability, kept separate from Bridge so the
+// MCP tool path and existing implementations/test doubles are unaffected.
+// Only firmware/hardware that advertises the camera/microphone capabilities
+// implements it; consumers type-assert for it.
+type PerceptionBridge interface {
+	CameraSnapshot(context.Context, SnapshotOptions) (CameraSnapshot, error)
+	AudioClip(context.Context, AudioOptions) (AudioClip, error)
+	Sensors(context.Context) (SensorState, error)
+}
+
 type FirmwareRunner interface {
 	UploadFirmware(context.Context, FirmwareUploadRequest) (FirmwareUploadResult, error)
 }

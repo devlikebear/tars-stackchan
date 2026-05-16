@@ -173,6 +173,47 @@ go run ./cmd/tars-stackchan-control
 
 Open `http://127.0.0.1:8787`. The console exposes status, expression, head, LED, motion, speech text, and speech volume through the same bridge contract as the MCP server.
 
+It also exposes two Embodied Bot endpoints for external callers (claude code / TARS / scripts):
+
+```bash
+# One call -> a monitor "emotion" (expression + LED + optional motion preset)
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"emotion":"happy"}' http://127.0.0.1:8787/api/emotion
+# allowed: happy sad angry surprised sleepy neutral blink excited calm
+# add {"motion":false} to suppress the preset motion
+
+# Read-only perception/owner/TARS visibility (no secrets)
+curl http://127.0.0.1:8787/api/perceive/status
+```
+
+## Embodied Bot (perception loop)
+
+The `perceive` subcommand turns Stack-chan into a sensory front-end: it polls
+the device, captures audio (and camera, hardware permitting), labels the
+moment against an enrolled owner, summarizes it, and posts a compact
+observation to TARS (the brain). Run order:
+
+```bash
+# 1. (optional) fingerprint the owner so the bot tells owner from stranger
+tars-stackchan-control perceive enroll --name me
+
+# 2. run the loop (audio-only on real CoreS3 until Spike S is fixed)
+TARS_STACKCHAN_BRIDGE=http TARS_STACKCHAN_BASE_URL=http://<device-ip> \
+TARS_STACKCHAN_PERCEIVE_CAMERA=off \
+TARS_STACKCHAN_TARS_BASE_URL=http://127.0.0.1:43180 \
+TARS_STACKCHAN_TARS_WEBHOOK_CHANNEL=stackchan \
+tars-stackchan-control perceive serve
+```
+
+Architecture (role split): tars-stackchan is the body (sensors + actuation),
+TARS is the brain (LLM + memory + persona). See `docs/plans/embodied-bot-roadmap.md`.
+
+> **Camera status:** on real M5Stack CoreS3, camera capture currently resets
+> the device — the camera SCCB shares the internal I2C bus already owned by
+> the Moddable peripheral driver (`docs/plans/embodied-bot-phase-1-spike.md`,
+> Spike S). The microphone (I2S) is unaffected and verified on hardware, so
+> run with `TARS_STACKCHAN_PERCEIVE_CAMERA=off` for audio-only operation.
+
 For UI-only development without hardware:
 
 ```bash
