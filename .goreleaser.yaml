@@ -84,6 +84,11 @@ brews:
       assert_match version.to_s, shell_output("#{bin}/tars-stackchan-mcp --version")
       assert_match version.to_s, shell_output("#{bin}/tars-stackchan-control --version")
       assert_match "TARS_STACKCHAN_ENABLE_FIRMWARE_TOOLS=1", shell_output("#{bin}/tars-stackchan-mcp config --target claude-code --firmware-tools")
+    service: |
+      run [opt_bin/"tars-stackchan-control", "tts", "serve"]
+      keep_alive true
+      log_path var/"log/tars-stackchan-tts.log"
+      error_log_path var/"log/tars-stackchan-tts.log"
     caveats: |
       Install and connect to Claude Code:
         export TARS_STACKCHAN_TOKEN="replace-with-local-token"
@@ -91,3 +96,12 @@ brews:
 
       The stackchan_upload_firmware tool is hidden unless TARS_STACKCHAN_ENABLE_FIRMWARE_TOOLS=1 is set.
       Run tars-stackchan-mcp doctor before allowing an agent to flash hardware.
+
+      Start the Gemini TTS relay as a background service:
+        export TARS_STACKCHAN_TOKEN="<local-token>"    # same token baked into the firmware MOD
+        export GEMINI_API_KEY="<google-ai-studio-key>" # or TARS_STACKCHAN_GEMINI_API_KEY
+        brew services start tars-stackchan
+      The relay advertises tars-stackchan-tts.local over mDNS, so the device
+      finds the current relay IP at boot without a re-flash. If mDNS does not
+      resolve on your network, re-flash with TARS_STACKCHAN_TTS_HOST=<mac-ip>.
+      Check it with: tars-stackchan-control tts status

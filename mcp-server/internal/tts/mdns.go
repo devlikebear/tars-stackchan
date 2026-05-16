@@ -32,6 +32,11 @@ func primaryIPv4() (string, error) {
 	return udpAddr.IP.To4().String(), nil
 }
 
+// dnssdPath is the fixed macOS location of dns-sd. Invoking it by absolute
+// path (instead of resolving via $PATH) closes the PATH-injection vector
+// (Sonar go:S4036); Advertise is darwin-only anyway.
+const dnssdPath = "/usr/bin/dns-sd"
+
 // lookPath is indirected so tests can stub dns-sd discovery.
 var lookPath = exec.LookPath
 
@@ -50,7 +55,7 @@ func Advertise(ctx context.Context, serviceName, hostname string, port int) (fun
 		fmt.Printf("mDNS advertise skipped: unsupported platform %q (use TARS_STACKCHAN_TTS_HOST=<ip>)\n", runtime.GOOS)
 		return noop, nil
 	}
-	if _, err := lookPath("dns-sd"); err != nil {
+	if _, err := lookPath(dnssdPath); err != nil {
 		fmt.Println("mDNS advertise skipped: dns-sd not found (use TARS_STACKCHAN_TTS_HOST=<ip>)")
 		return noop, nil
 	}
@@ -63,7 +68,7 @@ func Advertise(ctx context.Context, serviceName, hostname string, port int) (fun
 
 	// dns-sd -P <Name> _http._tcp local <port> <hostname> <ipv4>
 	args := dnssdProxyArgs(serviceName, hostname, port, ip)
-	cmd := exec.CommandContext(ctx, "dns-sd", args...)
+	cmd := exec.CommandContext(ctx, dnssdPath, args...)
 	if err := cmd.Start(); err != nil {
 		return noop, fmt.Errorf("start dns-sd proxy: %w", err)
 	}

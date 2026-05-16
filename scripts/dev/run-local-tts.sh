@@ -1,6 +1,15 @@
 #!/usr/bin/env sh
 set -eu
 
+# DEPRECATED dev wrapper. The Gemini TTS relay is now the Go binary
+# `tars-stackchan-control tts serve`, normally run as a Homebrew service:
+#
+#   brew services start tars-stackchan
+#
+# This script remains only as a thin shim for local development and is
+# removed in Phase 4. It resolves the relay token, then execs the Go relay
+# (preferring an installed binary, falling back to `go run`).
+
 repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 port="${TARS_STACKCHAN_TTS_PORT:-18080}"
 model="${TARS_STACKCHAN_TTS_MODEL:-gemini-3.1-flash-tts-preview}"
@@ -18,4 +27,15 @@ if [ -z "$tts_token" ]; then
   exit 1
 fi
 
-exec env TARS_STACKCHAN_TTS_TOKEN="$tts_token" uv run python scripts/dev/tts-remote-server.py --host 0.0.0.0 --port "$port" --model "$model" --voice "$voice"
+echo "deprecated: run-local-tts.sh -> use 'brew services start tars-stackchan' (running the Go relay via shim)" >&2
+
+if command -v tars-stackchan-control >/dev/null 2>&1; then
+  relay="tars-stackchan-control"
+else
+  relay="go run ./cmd/tars-stackchan-control"
+  cd "$repo_root/mcp-server"
+fi
+
+# shellcheck disable=SC2086
+exec env TARS_STACKCHAN_TTS_TOKEN="$tts_token" $relay tts serve \
+  --host 0.0.0.0 --port "$port" --model "$model" --voice "$voice" "$@"
