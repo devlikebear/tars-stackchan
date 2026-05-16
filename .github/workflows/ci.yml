@@ -46,5 +46,8 @@ jobs:
       - name: Test TTS relay contract
         run: scripts/test/tts-remote-server-contract.sh
 
+      - name: Test Go TTS relay contract
+        run: scripts/test/tts-relay-go-contract.sh
+
       - name: Test release config contract
         run: scripts/test/release-config-contract.sh
