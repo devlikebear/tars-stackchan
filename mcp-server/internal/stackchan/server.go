@@ -8,16 +8,31 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/devlikebear/tars-stackchan/mcp-server/internal/buildinfo"
 )
 
 const protocolVersion = "2024-11-05"
 
 type Server struct {
-	bridge Bridge
+	bridge         Bridge
+	firmwareRunner FirmwareRunner
 }
 
-func NewServer(bridge Bridge) *Server {
-	return &Server{bridge: bridge}
+type ServerOption func(*Server)
+
+func WithFirmwareRunner(runner FirmwareRunner) ServerOption {
+	return func(server *Server) {
+		server.firmwareRunner = runner
+	}
+}
+
+func NewServer(bridge Bridge, options ...ServerOption) *Server {
+	server := &Server{bridge: bridge}
+	for _, option := range options {
+		option(server)
+	}
+	return server
 }
 
 func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
@@ -68,7 +83,7 @@ func (s *Server) HandleMessage(ctx context.Context, payload []byte) (rpcResponse
 			},
 			"serverInfo": map[string]any{
 				"name":    "tars-stackchan",
-				"version": "0.1.0-dev",
+				"version": buildinfo.Version,
 			},
 		}), true
 
@@ -85,7 +100,7 @@ func (s *Server) HandleMessage(ctx context.Context, payload []byte) (rpcResponse
 		if !hasID {
 			return rpcResponse{}, false
 		}
-		return resultResponse(req.ID, map[string]any{"tools": ListTools()}), true
+		return resultResponse(req.ID, map[string]any{"tools": s.listTools()}), true
 
 	case "tools/call":
 		if !hasID {
@@ -95,7 +110,12 @@ func (s *Server) HandleMessage(ctx context.Context, payload []byte) (rpcResponse
 		if err != nil {
 			return errorResponse(req.ID, -32602, err.Error()), true
 		}
-		result, err := CallTool(ctx, s.bridge, params.Name, params.Arguments)
+		var result ToolCallResult
+		if params.Name == ToolUploadFirmware {
+			result, err = CallFirmwareTool(ctx, s.firmwareRunner, params.Arguments)
+		} else {
+			result, err = CallTool(ctx, s.bridge, params.Name, params.Arguments)
+		}
 		if err != nil {
 			return errorResponse(req.ID, -32000, err.Error()), true
 		}
@@ -107,6 +127,13 @@ func (s *Server) HandleMessage(ctx context.Context, payload []byte) (rpcResponse
 		}
 		return errorResponse(req.ID, -32601, fmt.Sprintf("method %q not found", req.Method)), true
 	}
+}
+
+func (s *Server) listTools() []Tool {
+	if s.firmwareRunner != nil {
+		return ListToolsWithFirmware()
+	}
+	return ListTools()
 }
 
 type rpcRequest struct {

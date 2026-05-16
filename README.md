@@ -1,23 +1,57 @@
 # TARS Stack-chan Bridge
 
-TARS Stack-chan Bridge lets local AI agents control an M5Stack Stack-chan K151 robot through MCP tools.
+TARS Stack-chan Bridge lets local AI agents control an M5Stack Stack-chan K151/CoreS3 through MCP tools, a local HTTP firmware bridge, and an optional browser control console.
 
-The MVP architecture is local-first:
+The project is local-first:
 
 ```text
-AI Agent / TARS / Claude
-  -> MCP client
-    -> tars-stackchan MCP server
-      -> local HTTP API over Wi-Fi
-        -> Stack-chan firmware bridge
-          -> expression / head servo / LED / motion / speech
+AI agent / TARS / Claude Code
+  -> stdio MCP server
+    -> local HTTP API over Wi-Fi
+      -> Stack-chan firmware MOD
+        -> expression / head / LED / motion / speech
 ```
 
-The server supports a mock bridge for local development and an HTTP bridge for real firmware control.
+The MCP server can run against a mock bridge for development or an HTTP bridge for real hardware.
 
-## Current Scope
+## Install
 
-Implemented MCP tools:
+Released macOS/Linux binaries are published through GitHub Releases and Homebrew.
+
+```bash
+brew tap devlikebear/tap
+brew install tars-stackchan
+```
+
+Set the local firmware bearer token before connecting a real device:
+
+```bash
+export TARS_STACKCHAN_TOKEN="<local-token>"
+```
+
+Connect Claude Code:
+
+```bash
+tars-stackchan-mcp install --target claude-code
+```
+
+For a copyable command or config snippet instead of writing client config:
+
+```bash
+tars-stackchan-mcp config --target claude-code
+tars-stackchan-mcp config --target claude-desktop
+tars-stackchan-mcp config --target tars
+```
+
+Check the local setup:
+
+```bash
+tars-stackchan-mcp doctor
+```
+
+## MCP Tools
+
+The default MCP tools are:
 
 - `stackchan_get_status`
 - `stackchan_set_expression`
@@ -26,35 +60,71 @@ Implemented MCP tools:
 - `stackchan_run_motion`
 - `stackchan_speak`
 
-Safety and validation included in the server:
+Safety rules enforced by the server:
 
 - Head tilt is clamped to `5..85` degrees.
-- Expressions are limited to a known allowlist.
+- Expressions and LED patterns use allowlists.
 - LED colors must use `#RRGGBB`.
 - Speech text is required and capped at 240 characters.
 - Speech volume is optional and normalized to `0.0..1.0`.
 - Tool arguments reject unknown JSON fields.
 
-## Quickstart
+## Firmware Upload Tool
+
+The firmware build/upload tool is intentionally opt-in because it can flash connected hardware.
+
+```bash
+tars-stackchan-mcp install --target claude-code --firmware-tools
+```
+
+That exposes:
+
+- `stackchan_upload_firmware`
+
+Supported modes:
+
+- `prepare`
+- `deps`
+- `host`
+- `mod`
+- `smoke`
+- `all`
+
+The default mode is `mod`, which prepares the pinned upstream firmware checkout, builds the TARS bridge MOD, and direct-flashes the ESP32 `xs` MOD partition through `scripts/dev/upload-firmware.sh`.
+
+Manual run example:
+
+```bash
+export TARS_STACKCHAN_TOKEN="<local-token>"
+export TARS_STACKCHAN_UPLOAD_PORT=/dev/cu.usbmodem1101
+scripts/dev/upload-firmware.sh mod
+```
+
+For a full host firmware deploy plus MOD flash:
+
+```bash
+TARS_STACKCHAN_DEPLOY_HOST=1 scripts/dev/upload-firmware.sh all
+```
+
+See [firmware/README.md](firmware/README.md) for firmware and TTS details, and [docs/hardware-smoke.md](docs/hardware-smoke.md) for the validated hardware smoke flow.
+
+## Local Development
+
+Run the Go test suite:
 
 ```bash
 cd mcp-server
 go test ./...
-go build ./cmd/tars-stackchan-mcp
-printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | go run ./cmd/tars-stackchan-mcp
 ```
 
-The default bridge is the in-memory mock bridge. It reports a connected `stackchan-k151` device and records expression, head, LED, motion, and speech requests locally.
-
-## Bridge Configuration
-
-Mock mode is the default:
+List tools with the mock bridge:
 
 ```bash
-TARS_STACKCHAN_BRIDGE=mock go run ./cmd/tars-stackchan-mcp
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+  | go run ./cmd/tars-stackchan-mcp
 ```
 
-HTTP mode calls the firmware-local `/v1` API:
+Run against real firmware:
 
 ```bash
 TARS_STACKCHAN_BRIDGE=http \
@@ -63,19 +133,19 @@ TARS_STACKCHAN_TOKEN="$TARS_STACKCHAN_TOKEN" \
 go run ./cmd/tars-stackchan-mcp
 ```
 
-The shared protocol is documented in [docs/protocol/local-control-api.md](docs/protocol/local-control-api.md).
-
-## Example Tool Call
+Expose the optional firmware upload tool locally:
 
 ```bash
-printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"stackchan_move_head","arguments":{"pan_deg":45,"tilt_deg":120,"speed":0.6}}}' \
-  | go run ./cmd/tars-stackchan-mcp
+TARS_STACKCHAN_ENABLE_FIRMWARE_TOOLS=1 \
+TARS_STACKCHAN_BRIDGE=http \
+TARS_STACKCHAN_BASE_URL=http://stackchan.local \
+TARS_STACKCHAN_TOKEN="$TARS_STACKCHAN_TOKEN" \
+go run ./cmd/tars-stackchan-mcp
 ```
 
-The response shows `tilt_deg` clamped to `85`.
+The shared firmware protocol is documented in [docs/protocol/local-control-api.md](docs/protocol/local-control-api.md).
 
-## Local Control GUI
+## Local Control Console
 
 Run the browser-based control panel before connecting an AI client:
 
@@ -86,7 +156,7 @@ TARS_STACKCHAN_TOKEN="$TARS_STACKCHAN_TOKEN" \
 go run ./cmd/tars-stackchan-control
 ```
 
-Open `http://127.0.0.1:8787`. The panel exposes status, expression, head, LED, motion, speech text, and speech volume controls through the same bridge contract as the MCP server.
+Open `http://127.0.0.1:8787`. The console exposes status, expression, head, LED, motion, speech text, and speech volume through the same bridge contract as the MCP server.
 
 For UI-only development without hardware:
 
@@ -94,26 +164,83 @@ For UI-only development without hardware:
 TARS_STACKCHAN_BRIDGE=mock go run ./cmd/tars-stackchan-control
 ```
 
-Override the listen address with `TARS_STACKCHAN_CONTROL_ADDR`, for example `TARS_STACKCHAN_CONTROL_ADDR=127.0.0.1:8790`.
+Override the listen address with `TARS_STACKCHAN_CONTROL_ADDR`, for example:
+
+```bash
+TARS_STACKCHAN_CONTROL_ADDR=127.0.0.1:8790 go run ./cmd/tars-stackchan-control
+```
+
+## Speech
+
+Speech uses Stack-chan remote TTS pointed at the local Gemini relay:
+
+```bash
+export GEMINI_API_KEY="<google-ai-studio-api-key>"
+scripts/dev/run-local-tts.sh
+```
+
+Defaults:
+
+- `TARS_STACKCHAN_TTS_MODEL=gemini-3.1-flash-tts-preview`
+- `TARS_STACKCHAN_TTS_VOICE=Kore`
+- `TARS_STACKCHAN_TTS_VOLUME=0.15`
+
+The relay requires `TARS_STACKCHAN_TTS_TOKEN` or `TARS_STACKCHAN_TOKEN` and redacts tokens from logs.
+
+## Verification
+
+Useful local checks:
+
+```bash
+cd mcp-server && go test ./...
+scripts/test/firmware-bridge-contract.sh
+scripts/test/firmware-upload-script-contract.sh
+scripts/test/hardware-smoke-contract.sh
+scripts/test/tts-remote-server-contract.sh
+scripts/test/release-config-contract.sh
+```
+
+Build and release configuration:
+
+```bash
+go run github.com/goreleaser/goreleaser/v2@latest check
+go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean --skip=publish
+```
+
+## Release
+
+CI runs on `main` and pull requests. Tags matching `v*` run GoReleaser, publish GitHub release archives, and update `devlikebear/homebrew-tap`.
+
+Required repository secrets:
+
+- `GITHUB_TOKEN`: provided by GitHub Actions for release asset publishing.
+- `TAP_GITHUB_TOKEN`: token with write access to `devlikebear/homebrew-tap`.
+
+The Homebrew formula installs both binaries:
+
+- `tars-stackchan-mcp`
+- `tars-stackchan-control`
+
+It also packages `firmware/` and `scripts/` under the formula share directory so `stackchan_upload_firmware` can find the upload helper after Homebrew installation.
 
 ## Repository Layout
 
 ```text
 tars-stackchan/
   README.md
+  .github/workflows/
+  .goreleaser.yaml
   docs/
-    plans/
+    hardware-smoke.md
+    protocol/local-control-api.md
+  firmware/
+    README.md
+    stackchan/
   mcp-server/
     cmd/tars-stackchan-mcp/
-    internal/stackchan/
-    internal/bridge/mock/
-    examples/
-      claude-desktop/
-      tars/
-  firmware/
+    cmd/tars-stackchan-control/
+    internal/
   scripts/
+    dev/
+    test/
 ```
-
-## Current Phase
-
-Phase 4 is prepared with upload and hardware smoke helpers. See [docs/hardware-smoke.md](docs/hardware-smoke.md).

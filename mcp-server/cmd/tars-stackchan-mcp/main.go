@@ -2,27 +2,72 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"flag"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
+	"time"
 
 	httpbridge "github.com/devlikebear/tars-stackchan/mcp-server/internal/bridge/http"
 	"github.com/devlikebear/tars-stackchan/mcp-server/internal/bridge/mock"
+	"github.com/devlikebear/tars-stackchan/mcp-server/internal/buildinfo"
 	"github.com/devlikebear/tars-stackchan/mcp-server/internal/stackchan"
 )
 
+const binaryName = "tars-stackchan-mcp"
+
 func main() {
-	bridge, err := newBridgeFromEnv()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "tars-stackchan MCP server configuration failed: %v\n", err)
-		os.Exit(1)
+	os.Exit(runCommand(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+func runCommand(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) > 0 {
+		switch args[0] {
+		case "--version", "-version", "version":
+			fmt.Fprintln(stdout, buildinfo.String(binaryName))
+			return 0
+		case "-h", "--help", "help":
+			printUsage(stdout)
+			return 0
+		case "config":
+			return runConfigCommand(args[1:], stdout, stderr)
+		case "install":
+			return runInstallCommand(args[1:], stdout, stderr)
+		case "doctor":
+			return runDoctorCommand(args[1:], stdout, stderr)
+		default:
+			fmt.Fprintf(stderr, "unknown command %q\n\n", args[0])
+			printUsage(stderr)
+			return 2
+		}
 	}
 
-	server := stackchan.NewServer(bridge)
-	if err := server.Serve(context.Background(), os.Stdin, os.Stdout); err != nil {
-		fmt.Fprintf(os.Stderr, "tars-stackchan MCP server failed: %v\n", err)
-		os.Exit(1)
+	bridge, err := newBridgeFromEnv()
+	if err != nil {
+		fmt.Fprintf(stderr, "tars-stackchan MCP server configuration failed: %v\n", err)
+		return 1
 	}
+
+	firmwareRunner, err := newFirmwareRunnerFromEnv()
+	if err != nil {
+		fmt.Fprintf(stderr, "tars-stackchan firmware tool configuration failed: %v\n", err)
+		return 1
+	}
+	options := []stackchan.ServerOption{}
+	if firmwareRunner != nil {
+		options = append(options, stackchan.WithFirmwareRunner(firmwareRunner))
+	}
+
+	server := stackchan.NewServer(bridge, options...)
+	if err := server.Serve(context.Background(), os.Stdin, stdout); err != nil {
+		fmt.Fprintf(stderr, "tars-stackchan MCP server failed: %v\n", err)
+		return 1
+	}
+	return 0
 }
 
 func newBridgeFromEnv() (stackchan.Bridge, error) {
@@ -41,4 +86,345 @@ func newBridgeFromEnv() (stackchan.Bridge, error) {
 	default:
 		return nil, fmt.Errorf("unsupported TARS_STACKCHAN_BRIDGE %q; use mock or http", os.Getenv("TARS_STACKCHAN_BRIDGE"))
 	}
+}
+
+func newFirmwareRunnerFromEnv() (stackchan.FirmwareRunner, error) {
+	if !envEnabled("TARS_STACKCHAN_ENABLE_FIRMWARE_TOOLS") {
+		return nil, nil
+	}
+	return stackchan.NewScriptFirmwareRunner(stackchan.ScriptFirmwareRunnerConfig{
+		ScriptPath: os.Getenv("TARS_STACKCHAN_UPLOAD_SCRIPT"),
+		RepoRoot:   os.Getenv("TARS_STACKCHAN_REPO_ROOT"),
+	})
+}
+
+type installConfig struct {
+	target        string
+	scope         string
+	command       string
+	bridge        string
+	baseURL       string
+	tokenEnv      string
+	firmwareTools bool
+	dryRun        bool
+}
+
+func defaultInstallConfig() installConfig {
+	return installConfig{
+		target:   "claude-code",
+		scope:    "user",
+		command:  defaultCommandPath(),
+		bridge:   "http",
+		baseURL:  envDefault("TARS_STACKCHAN_BASE_URL", "http://stackchan.local"),
+		tokenEnv: "TARS_STACKCHAN_TOKEN",
+	}
+}
+
+func runConfigCommand(args []string, stdout io.Writer, stderr io.Writer) int {
+	config, ok := parseInstallFlags("config", args, stderr)
+	if !ok {
+		return 2
+	}
+	if err := renderConfig(config, stdout); err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 2
+	}
+	return 0
+}
+
+func runInstallCommand(args []string, stdout io.Writer, stderr io.Writer) int {
+	config, ok := parseInstallFlags("install", args, stderr)
+	if !ok {
+		return 2
+	}
+	if config.dryRun {
+		if err := renderConfig(config, stdout); err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 2
+		}
+		return 0
+	}
+	if config.target != "claude-code" {
+		fmt.Fprintf(stderr, "install currently supports --target claude-code; use config --target %s for a copyable snippet\n", config.target)
+		return 2
+	}
+	claude, err := exec.LookPath("claude")
+	if err != nil {
+		fmt.Fprintln(stderr, "claude CLI was not found on PATH; run config --target claude-code for the copyable command")
+		return 1
+	}
+	if config.bridge == "http" && strings.TrimSpace(os.Getenv(config.tokenEnv)) == "" {
+		fmt.Fprintf(stderr, "%s is required for HTTP install; export it first or use config --target claude-code\n", config.tokenEnv)
+		return 1
+	}
+
+	command := exec.Command(claude, claudeInstallArgs(config)...)
+	command.Stdout = stdout
+	command.Stderr = stderr
+	if err := command.Run(); err != nil {
+		fmt.Fprintf(stderr, "claude mcp add failed: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runDoctorCommand(args []string, stdout io.Writer, stderr io.Writer) int {
+	flags := flag.NewFlagSet("doctor", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	skipDevice := flags.Bool("skip-device", false, "skip the HTTP status probe")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+
+	ok := true
+	fmt.Fprintf(stdout, "%s\n", buildinfo.String(binaryName))
+	fmt.Fprintf(stdout, "command: %s\n", defaultCommandPath())
+
+	bridgeMode := strings.ToLower(strings.TrimSpace(envDefault("TARS_STACKCHAN_BRIDGE", "mock")))
+	fmt.Fprintf(stdout, "bridge: %s\n", bridgeMode)
+	if bridgeMode == "http" {
+		fmt.Fprintf(stdout, "base_url: %s\n", envDefault("TARS_STACKCHAN_BASE_URL", "http://stackchan.local"))
+		if strings.TrimSpace(os.Getenv("TARS_STACKCHAN_TOKEN")) == "" {
+			fmt.Fprintln(stdout, "token: missing TARS_STACKCHAN_TOKEN")
+			ok = false
+		} else {
+			fmt.Fprintln(stdout, "token: set")
+		}
+	}
+
+	if envEnabled("TARS_STACKCHAN_ENABLE_FIRMWARE_TOOLS") {
+		runner, err := newFirmwareRunnerFromEnv()
+		if err != nil {
+			fmt.Fprintf(stdout, "firmware_tools: not ready (%v)\n", err)
+			ok = false
+		} else if runner != nil {
+			fmt.Fprintln(stdout, "firmware_tools: enabled")
+		}
+	} else {
+		fmt.Fprintln(stdout, "firmware_tools: disabled")
+	}
+
+	if !*skipDevice {
+		bridge, err := newBridgeFromEnv()
+		if err != nil {
+			fmt.Fprintf(stdout, "device: not ready (%v)\n", err)
+			ok = false
+		} else {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			status, err := bridge.GetStatus(ctx)
+			if err != nil {
+				fmt.Fprintf(stdout, "device: not ready (%v)\n", err)
+				ok = false
+			} else {
+				fmt.Fprintf(stdout, "device: connected=%t firmware=%s ip=%s\n", status.Connected, status.Firmware, status.IP)
+			}
+		}
+	}
+
+	if !ok {
+		return 1
+	}
+	return 0
+}
+
+func parseInstallFlags(name string, args []string, stderr io.Writer) (installConfig, bool) {
+	config := defaultInstallConfig()
+	flags := flag.NewFlagSet(name, flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.StringVar(&config.target, "target", config.target, "target client: claude-code, claude-desktop, or tars")
+	flags.StringVar(&config.scope, "scope", config.scope, "Claude Code MCP scope")
+	flags.StringVar(&config.command, "command", config.command, "path to tars-stackchan-mcp")
+	flags.StringVar(&config.bridge, "bridge", config.bridge, "bridge mode: http or mock")
+	flags.StringVar(&config.baseURL, "base-url", config.baseURL, "Stack-chan local HTTP base URL")
+	flags.StringVar(&config.tokenEnv, "token-env", config.tokenEnv, "environment variable that stores the Stack-chan token")
+	flags.BoolVar(&config.firmwareTools, "firmware-tools", config.firmwareTools, "enable firmware build/upload MCP tools")
+	flags.BoolVar(&config.dryRun, "dry-run", config.dryRun, "print the install command without changing client config")
+	if err := flags.Parse(args); err != nil {
+		return installConfig{}, false
+	}
+	config.target = strings.ToLower(strings.TrimSpace(config.target))
+	config.scope = strings.ToLower(strings.TrimSpace(config.scope))
+	config.bridge = strings.ToLower(strings.TrimSpace(config.bridge))
+	return config, true
+}
+
+func renderConfig(config installConfig, stdout io.Writer) error {
+	switch config.target {
+	case "claude-code":
+		renderClaudeCodeCommand(config, stdout)
+	case "claude-desktop":
+		return renderClaudeDesktopConfig(config, stdout)
+	case "tars":
+		renderTARSConfig(config, stdout)
+	default:
+		return fmt.Errorf("unsupported target %q; use claude-code, claude-desktop, or tars", config.target)
+	}
+	return nil
+}
+
+func renderClaudeCodeCommand(config installConfig, stdout io.Writer) {
+	fmt.Fprintf(stdout, "claude mcp add --transport stdio --scope %s \\\n", shellValue(config.scope))
+	for _, env := range printableClaudeEnv(config) {
+		fmt.Fprintf(stdout, "  --env %s \\\n", env)
+	}
+	fmt.Fprintf(stdout, "  tars-stackchan -- %s\n", shellValue(config.command))
+}
+
+func renderClaudeDesktopConfig(config installConfig, stdout io.Writer) error {
+	payload := map[string]any{
+		"mcpServers": map[string]any{
+			"tars-stackchan": map[string]any{
+				"command": config.command,
+				"args":    []string{},
+				"env":     desktopEnv(config),
+			},
+		},
+	}
+	encoded, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(stdout, string(encoded))
+	return nil
+}
+
+func renderTARSConfig(config installConfig, stdout io.Writer) {
+	fmt.Fprintln(stdout, "mcp:")
+	fmt.Fprintln(stdout, "  servers:")
+	fmt.Fprintln(stdout, "    tars-stackchan:")
+	fmt.Fprintf(stdout, "      command: %s\n", config.command)
+	fmt.Fprintln(stdout, "      args: []")
+	fmt.Fprintln(stdout, "      env:")
+	fmt.Fprintf(stdout, "        TARS_STACKCHAN_BRIDGE: %s\n", config.bridge)
+	if config.bridge == "http" {
+		fmt.Fprintf(stdout, "        TARS_STACKCHAN_BASE_URL: %s\n", config.baseURL)
+		fmt.Fprintf(stdout, "        TARS_STACKCHAN_TOKEN: ${%s}\n", config.tokenEnv)
+	}
+	if config.firmwareTools {
+		fmt.Fprintln(stdout, "        TARS_STACKCHAN_ENABLE_FIRMWARE_TOOLS: \"1\"")
+	}
+}
+
+func printableClaudeEnv(config installConfig) []string {
+	env := []string{"TARS_STACKCHAN_BRIDGE=" + config.bridge}
+	if config.bridge == "http" {
+		env = append(env,
+			"TARS_STACKCHAN_BASE_URL="+config.baseURL,
+			"TARS_STACKCHAN_TOKEN=\"$"+config.tokenEnv+"\"",
+		)
+	}
+	if config.firmwareTools {
+		env = append(env, "TARS_STACKCHAN_ENABLE_FIRMWARE_TOOLS=1")
+	}
+	return env
+}
+
+func desktopEnv(config installConfig) map[string]string {
+	env := map[string]string{
+		"TARS_STACKCHAN_BRIDGE": config.bridge,
+	}
+	if config.bridge == "http" {
+		env["TARS_STACKCHAN_BASE_URL"] = config.baseURL
+		env["TARS_STACKCHAN_TOKEN"] = "${" + config.tokenEnv + "}"
+	}
+	if config.firmwareTools {
+		env["TARS_STACKCHAN_ENABLE_FIRMWARE_TOOLS"] = "1"
+	}
+	return env
+}
+
+func claudeInstallArgs(config installConfig) []string {
+	args := []string{
+		"mcp", "add",
+		"--transport", "stdio",
+		"--scope", config.scope,
+	}
+	for _, env := range installEnv(config) {
+		args = append(args, "--env", env)
+	}
+	args = append(args, "tars-stackchan", "--", config.command)
+	return args
+}
+
+func installEnv(config installConfig) []string {
+	env := []string{"TARS_STACKCHAN_BRIDGE=" + config.bridge}
+	if config.bridge == "http" {
+		env = append(env,
+			"TARS_STACKCHAN_BASE_URL="+config.baseURL,
+			"TARS_STACKCHAN_TOKEN="+os.Getenv(config.tokenEnv),
+		)
+	}
+	if config.firmwareTools {
+		env = append(env, "TARS_STACKCHAN_ENABLE_FIRMWARE_TOOLS=1")
+	}
+	return env
+}
+
+func defaultCommandPath() string {
+	if len(os.Args) > 0 && strings.TrimSpace(os.Args[0]) != "" {
+		if path, err := exec.LookPath(os.Args[0]); err == nil {
+			if absolute, absErr := filepath.Abs(path); absErr == nil {
+				return absolute
+			}
+			return path
+		}
+		if strings.Contains(os.Args[0], string(os.PathSeparator)) {
+			if absolute, err := filepath.Abs(os.Args[0]); err == nil {
+				return absolute
+			}
+			return os.Args[0]
+		}
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return binaryName
+	}
+	return executable
+}
+
+func envDefault(key string, fallback string) string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func envEnabled(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func shellValue(value string) string {
+	if value == "" {
+		return "''"
+	}
+	if !strings.ContainsAny(value, " \t\n'\"\\$") {
+		return value
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
+func printUsage(stdout io.Writer) {
+	fmt.Fprintf(stdout, `Usage:
+  %[1]s                         run the stdio MCP server
+  %[1]s --version               print version
+  %[1]s config [flags]          print MCP client config snippets
+  %[1]s install [flags]         install into Claude Code
+  %[1]s doctor [flags]          check local configuration
+
+Common flags for config/install:
+  --target claude-code|claude-desktop|tars
+  --base-url http://stackchan.local
+  --token-env TARS_STACKCHAN_TOKEN
+  --firmware-tools
+
+Firmware MCP tools are local flashing tools and are hidden unless
+TARS_STACKCHAN_ENABLE_FIRMWARE_TOOLS=1 is configured.
+`, binaryName)
 }

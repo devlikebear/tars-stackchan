@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -56,5 +58,18 @@ func TestLoadConfigRejectsUnknownBridge(t *testing.T) {
 	_, err := loadConfig()
 	if err == nil {
 		t.Fatal("expected unknown bridge error")
+	}
+}
+
+func TestRunCommandVersion(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := runCommand([]string{"--version"}, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("exit code = %d, stderr = %s", exitCode, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "tars-stackchan-control") {
+		t.Fatalf("version output = %q, want binary name", stdout.String())
 	}
 }

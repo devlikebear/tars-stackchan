@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: mcp-server/go.mod
+          cache-dependency-path: mcp-server/go.mod
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Test Go MCP server
+        working-directory: mcp-server
+        run: go test ./...
+
+      - name: Test release contracts
+        run: |
+          scripts/test/firmware-bridge-contract.sh
+          scripts/test/firmware-upload-script-contract.sh
+          scripts/test/hardware-smoke-contract.sh
+          scripts/test/tts-remote-server-contract.sh
+          scripts/test/release-config-contract.sh
+
+      - name: Release binaries and Homebrew formula
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}

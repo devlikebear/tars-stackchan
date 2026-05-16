@@ -1,0 +1,93 @@
+version: 2
+
+project_name: tars-stackchan
+
+builds:
+  - id: tars-stackchan-mcp
+    dir: mcp-server
+    main: ./cmd/tars-stackchan-mcp
+    binary: tars-stackchan-mcp
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/devlikebear/tars-stackchan/mcp-server/internal/buildinfo.Version={{ .Version }}
+      - -X github.com/devlikebear/tars-stackchan/mcp-server/internal/buildinfo.Commit={{ .Commit }}
+      - -X github.com/devlikebear/tars-stackchan/mcp-server/internal/buildinfo.Date={{ .Date }}
+
+  - id: tars-stackchan-control
+    dir: mcp-server
+    main: ./cmd/tars-stackchan-control
+    binary: tars-stackchan-control
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/devlikebear/tars-stackchan/mcp-server/internal/buildinfo.Version={{ .Version }}
+      - -X github.com/devlikebear/tars-stackchan/mcp-server/internal/buildinfo.Commit={{ .Commit }}
+      - -X github.com/devlikebear/tars-stackchan/mcp-server/internal/buildinfo.Date={{ .Date }}
+
+archives:
+  - id: tars-stackchan
+    ids:
+      - tars-stackchan-mcp
+      - tars-stackchan-control
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - README.md
+      - docs/**/*
+      - firmware/**/*
+      - scripts/dev/**/*
+      - scripts/test/hardware-smoke.sh
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+
+brews:
+  - name: tars-stackchan
+    ids:
+      - tars-stackchan
+    repository:
+      owner: devlikebear
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/devlikebear/tars-stackchan
+    description: MCP bridge and local control UI for M5Stack Stack-chan
+    install: |
+      libexec.install "tars-stackchan-mcp"
+      libexec.install "tars-stackchan-control"
+      pkgshare.install "scripts"
+      pkgshare.install "firmware"
+      (bin/"tars-stackchan-mcp").write_env_script libexec/"tars-stackchan-mcp", TARS_STACKCHAN_REPO_ROOT: pkgshare
+      (bin/"tars-stackchan-control").write_env_script libexec/"tars-stackchan-control", TARS_STACKCHAN_REPO_ROOT: pkgshare
+    test: |
+      assert_match version.to_s, shell_output("#{bin}/tars-stackchan-mcp --version")
+      assert_match version.to_s, shell_output("#{bin}/tars-stackchan-control --version")
+      assert_match "TARS_STACKCHAN_ENABLE_FIRMWARE_TOOLS=1", shell_output("#{bin}/tars-stackchan-mcp config --target claude-code --firmware-tools")
+    caveats: |
+      Install and connect to Claude Code:
+        export TARS_STACKCHAN_TOKEN="replace-with-local-token"
+        tars-stackchan-mcp install --target claude-code --firmware-tools
+
+      The stackchan_upload_firmware tool is hidden unless TARS_STACKCHAN_ENABLE_FIRMWARE_TOOLS=1 is set.
+      Run tars-stackchan-mcp doctor before allowing an agent to flash hardware.

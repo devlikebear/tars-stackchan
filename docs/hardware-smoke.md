@@ -4,7 +4,7 @@ Status: passed.
 
 Date: 2026-05-16
 Firmware upstream: `stack-chan/stack-chan@677224032e9ca25ac5c327b2eacd0034804b756f`
-TARS Stack-chan commit: Phase 4 smoke fix commit
+TARS Stack-chan state: firmware upload helpers, Gemini TTS relay, and MCP control tools are implemented
 Device: M5Stack Stack-chan K151 / CoreS3
 Base URL: `http://192.168.219.113`
 
@@ -141,7 +141,7 @@ HTTP 401
 
 ## Known Limitations
 
-- The bridge uses a static local bearer token for MVP.
+- The bridge uses a static local bearer token.
 - Camera, microphone, NFC, IR, OTA, and multi-device flows are out of scope.
 - The firmware overlay is tested by contract tests locally; full validation requires a real Stack-chan device.
 - `stackchan.local` did not resolve in this environment during the smoke; use the IP from the firmware log or status response until mDNS is verified.

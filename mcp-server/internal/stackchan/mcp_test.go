@@ -1,6 +1,7 @@
 package stackchan
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"strings"
@@ -60,6 +61,15 @@ func (b *recordingBridge) Speak(_ context.Context, req SpeechRequest) (ActionRes
 	return ActionResult{OK: true, Action: "speak"}, nil
 }
 
+type recordingFirmwareRunner struct {
+	request FirmwareUploadRequest
+}
+
+func (r *recordingFirmwareRunner) UploadFirmware(_ context.Context, req FirmwareUploadRequest) (FirmwareUploadResult, error) {
+	r.request = req
+	return FirmwareUploadResult{OK: true, Mode: req.Mode, ExitCode: 0, Stdout: "uploaded"}, nil
+}
+
 func TestListToolsExposesStackchanTools(t *testing.T) {
 	want := []string{
 		"stackchan_get_status",
@@ -90,6 +100,63 @@ func TestListToolsExposesStackchanTools(t *testing.T) {
 	}
 }
 
+func TestServerListsFirmwareToolOnlyWhenRunnerConfigured(t *testing.T) {
+	baseServer := NewServer(&recordingBridge{})
+	baseResponse, ok := baseServer.HandleMessage(context.Background(), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	if !ok {
+		t.Fatal("expected tools/list response")
+	}
+	if responseHasTool(t, baseResponse, ToolUploadFirmware) {
+		t.Fatalf("%s should be hidden until firmware tools are explicitly enabled", ToolUploadFirmware)
+	}
+
+	server := NewServer(&recordingBridge{}, WithFirmwareRunner(&recordingFirmwareRunner{}))
+	response, ok := server.HandleMessage(context.Background(), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	if !ok {
+		t.Fatal("expected tools/list response")
+	}
+	if !responseHasTool(t, response, ToolUploadFirmware) {
+		t.Fatalf("missing tool %q when firmware runner is configured", ToolUploadFirmware)
+	}
+}
+
+func TestFirmwareUploadToolPassesValidatedRequest(t *testing.T) {
+	runner := &recordingFirmwareRunner{}
+	server := NewServer(&recordingBridge{}, WithFirmwareRunner(runner))
+
+	response, ok := server.HandleMessage(context.Background(), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"stackchan_upload_firmware","arguments":{"mode":"mod","base_url":"http://stackchan.local","upload_port":"/dev/cu.usbmodem101"}}}`))
+	if !ok {
+		t.Fatal("expected tools/call response")
+	}
+	if response.Error != nil {
+		t.Fatalf("firmware upload tool error: %s", response.Error.Message)
+	}
+	if runner.request.Mode != "mod" {
+		t.Fatalf("mode = %q, want mod", runner.request.Mode)
+	}
+	if runner.request.BaseURL != "http://stackchan.local" {
+		t.Fatalf("base URL = %q, want hardware URL", runner.request.BaseURL)
+	}
+	if runner.request.UploadPort != "/dev/cu.usbmodem101" {
+		t.Fatalf("upload port = %q, want explicit USB port", runner.request.UploadPort)
+	}
+}
+
+func TestFirmwareUploadToolRejectsUnknownMode(t *testing.T) {
+	server := NewServer(&recordingBridge{}, WithFirmwareRunner(&recordingFirmwareRunner{}))
+
+	response, ok := server.HandleMessage(context.Background(), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"stackchan_upload_firmware","arguments":{"mode":"factory-reset"}}}`))
+	if !ok {
+		t.Fatal("expected tools/call response")
+	}
+	if response.Error == nil {
+		t.Fatal("expected firmware mode validation error")
+	}
+	if !strings.Contains(response.Error.Message, "unsupported firmware upload mode") {
+		t.Fatalf("error = %q, want unsupported mode", response.Error.Message)
+	}
+}
+
 func TestCallToolRejectsUnknownJSONFields(t *testing.T) {
 	bridge := &recordingBridge{}
 	_, err := CallTool(context.Background(), bridge, "stackchan_set_expression", json.RawMessage(`{"emotion":"happy","extra":true}`))
@@ -99,6 +166,29 @@ func TestCallToolRejectsUnknownJSONFields(t *testing.T) {
 	if !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("error = %q, want unknown field", err)
 	}
+}
+
+func responseHasTool(t *testing.T, response rpcResponse, toolName string) bool {
+	t.Helper()
+
+	payload, err := json.Marshal(response.Result)
+	if err != nil {
+		t.Fatalf("marshal result: %v", err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	var result struct {
+		Tools []Tool `json:"tools"`
+	}
+	if err := decoder.Decode(&result); err != nil {
+		t.Fatalf("decode tools/list result: %v", err)
+	}
+	for _, tool := range result.Tools {
+		if tool.Name == toolName {
+			return true
+		}
+	}
+	return false
 }
 
 func TestMoveHeadClampsTiltToSafeRange(t *testing.T) {

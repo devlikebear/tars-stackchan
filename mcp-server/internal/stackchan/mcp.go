@@ -51,6 +51,15 @@ var (
 const maxSpeechTextRunes = 240
 
 func ListTools() []Tool {
+	return controlTools()
+}
+
+func ListToolsWithFirmware() []Tool {
+	tools := controlTools()
+	return append(tools, firmwareUploadTool())
+}
+
+func controlTools() []Tool {
 	return []Tool{
 		{
 			Name:        ToolGetStatus,
@@ -101,6 +110,37 @@ func ListTools() []Tool {
 				"volume": numberSchema("Optional normalized speech volume from 0.0 to 1.0."),
 			}, []string{"text"}),
 		},
+	}
+}
+
+func firmwareUploadTool() Tool {
+	return Tool{
+		Name:        ToolUploadFirmware,
+		Description: "Prepare, build, upload, or smoke-test the TARS Stack-chan firmware through the local upload helper. This tool is only available when firmware tools are explicitly enabled.",
+		InputSchema: objectSchema(map[string]any{
+			"mode": map[string]any{
+				"type":        "string",
+				"description": "Upload helper mode. Defaults to mod, which builds and flashes only the bridge MOD.",
+				"enum":        []string{"prepare", "deps", "host", "mod", "smoke", "all"},
+				"default":     "mod",
+			},
+			"deploy_host": map[string]any{
+				"type":        "boolean",
+				"description": "Set TARS_STACKCHAN_DEPLOY_HOST=1 for mode=all.",
+			},
+			"skip_smoke": map[string]any{
+				"type":        "boolean",
+				"description": "Set TARS_STACKCHAN_SKIP_SMOKE=1 for mode=all.",
+			},
+			"base_url": map[string]any{
+				"type":        "string",
+				"description": "Override TARS_STACKCHAN_BASE_URL for smoke checks.",
+			},
+			"upload_port": map[string]any{
+				"type":        "string",
+				"description": "Override TARS_STACKCHAN_UPLOAD_PORT, for example /dev/cu.usbmodem101.",
+			},
+		}, []string{}),
 	}
 }
 
@@ -196,6 +236,25 @@ func CallTool(ctx context.Context, bridge Bridge, name string, args json.RawMess
 	}
 }
 
+func CallFirmwareTool(ctx context.Context, runner FirmwareRunner, args json.RawMessage) (ToolCallResult, error) {
+	if runner == nil {
+		return ToolCallResult{}, errors.New("firmware tools are disabled; set TARS_STACKCHAN_ENABLE_FIRMWARE_TOOLS=1")
+	}
+
+	req, err := decodeStrict[FirmwareUploadRequest](args)
+	if err != nil {
+		return ToolCallResult{}, err
+	}
+	if err := validateFirmwareUpload(&req); err != nil {
+		return ToolCallResult{}, err
+	}
+	result, err := runner.UploadFirmware(ctx, req)
+	if err != nil {
+		return ToolCallResult{}, err
+	}
+	return jsonTextResult(result)
+}
+
 func decodeNoArgs(raw json.RawMessage) error {
 	var req struct{}
 	_, err := decodeStrictInto(raw, &req)
@@ -267,6 +326,21 @@ func validateSpeech(req SpeechRequest) error {
 	if req.Volume != nil && (*req.Volume < 0 || *req.Volume > 1) {
 		return fmt.Errorf("speech volume %.2f must be between 0.0 and 1.0", *req.Volume)
 	}
+	return nil
+}
+
+func validateFirmwareUpload(req *FirmwareUploadRequest) error {
+	req.Mode = strings.TrimSpace(req.Mode)
+	if req.Mode == "" {
+		req.Mode = "mod"
+	}
+	switch req.Mode {
+	case "prepare", "deps", "host", "mod", "smoke", "all":
+	default:
+		return fmt.Errorf("unsupported firmware upload mode %q", req.Mode)
+	}
+	req.BaseURL = strings.TrimSpace(req.BaseURL)
+	req.UploadPort = strings.TrimSpace(req.UploadPort)
 	return nil
 }
 

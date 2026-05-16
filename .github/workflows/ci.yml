@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: mcp-server/go.mod
+          cache-dependency-path: mcp-server/go.mod
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Test Go MCP server
+        working-directory: mcp-server
+        run: go test ./...
+
+      - name: Test firmware bridge contract
+        run: scripts/test/firmware-bridge-contract.sh
+
+      - name: Test firmware upload script contract
+        run: scripts/test/firmware-upload-script-contract.sh
+
+      - name: Test hardware smoke script contract
+        run: scripts/test/hardware-smoke-contract.sh
+
+      - name: Test TTS relay contract
+        run: scripts/test/tts-remote-server-contract.sh
+
+      - name: Test release config contract
+        run: scripts/test/release-config-contract.sh

@@ -2,7 +2,7 @@
 
 This document defines the local HTTP API shared by the `tars-stackchan` MCP server and the Stack-chan firmware bridge.
 
-The API is versioned from the first MVP as `/v1` so MCP clients and firmware can evolve without changing the initial tool contract.
+The API is versioned as `/v1` so MCP clients and firmware can evolve without changing the initial tool contract.
 
 ## Transport
 
@@ -62,7 +62,7 @@ Request:
 }
 ```
 
-Allowed MVP expressions:
+Allowed expressions:
 
 - `angry`
 - `blink`
@@ -93,7 +93,7 @@ Request:
 Safety contract:
 
 - MCP server accepts `pan_deg` as a horizontal angle. Firmware may clamp or normalize it to its actual safe range.
-- The Phase 3 firmware overlay clamps `pan_deg` to `-90..90`.
+- The firmware overlay clamps `pan_deg` to `-90..90`.
 - MCP server clamps `tilt_deg` to `5..85`.
 - Firmware must also clamp `tilt_deg` to `5..85`.
 - `speed` is normalized to `0.0..1.0`.
@@ -116,7 +116,7 @@ Request:
 }
 ```
 
-Allowed MVP patterns:
+Allowed LED patterns:
 
 - `blink`
 - `off`
@@ -141,7 +141,7 @@ Request:
 }
 ```
 
-Allowed MVP motions:
+Allowed motions:
 
 - `home`
 - `look_around`
@@ -206,7 +206,7 @@ Recommended body:
 
 The MCP HTTP bridge surfaces the HTTP status code and response body as the MCP tool error.
 
-## MVP Endpoints
+## Current Endpoints
 
 ```text
 GET  /v1/status
