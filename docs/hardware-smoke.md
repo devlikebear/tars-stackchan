@@ -15,6 +15,7 @@ Base URL: `http://192.168.219.113`
 - Upstream Moddable/ESP32 toolchain is installed.
 - `uv` is installed; the upload helper uses `uv run --with esptool esptool` for ESP32 flash operations.
 - `TARS_STACKCHAN_TOKEN` is set and matches the firmware MOD manifest.
+- `GEMINI_API_KEY` or `TARS_STACKCHAN_GEMINI_API_KEY` is set before starting the local speech relay.
 
 ## Prepare Firmware Upload
 
@@ -66,7 +67,15 @@ scripts/dev/check-firmware-upload-ready.sh
 
 The bridge MOD must avoid module names that collide with host firmware modules.
 The Stack-chan host already ships `http-server-service`; the bridge maps its retained service as `tars-http-server-service` and imports that name so the MOD does not accidentally load the host copy.
-For K151/CoreS3, the host `stackchan/manifest_local.json` must be patched away from the upstream default `driver.type: none`; otherwise head and motion endpoints can return success without physical servo movement. The prepare helper patches this to the `m5stackchan` driver and the `head` LED group.
+For K151/CoreS3, the host `stackchan/manifest_local.json` must be patched away from the upstream default `driver.type: none`; otherwise head and motion endpoints can return success without physical servo movement. The prepare helper patches this to the `m5stackchan` driver, the `head` LED group, and a remote TTS server endpoint.
+For local speech testing, start `scripts/dev/run-local-tts.sh` before using `stackchan_speak`. The relay uses Gemini 3.1 Flash TTS by default:
+
+```bash
+export GEMINI_API_KEY="<google-ai-studio-api-key>"
+export TARS_STACKCHAN_TTS_VOICE=Kore
+scripts/dev/run-local-tts.sh
+```
+
 If the device does not answer HTTP immediately after direct flash, a USB hard reset can bring Wi-Fi and the bridge API back without reflashing.
 
 ## Smoke Commands

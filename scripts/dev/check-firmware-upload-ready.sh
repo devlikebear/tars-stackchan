@@ -47,15 +47,19 @@ const manifest = require(process.argv[2])
 const includes = manifest.include || []
 const driver = manifest.config?.driver || {}
 const led = manifest.config?.led || {}
+const tts = manifest.config?.tts || {}
 const ok = includes.includes('./manifest_m5stackchan_cores3.json') &&
   driver.type === 'm5stackchan' &&
   driver.servoPower?.type === 'py32' &&
-  led.head?.type === 'py32'
-process.stdout.write(ok ? 'ready' : `driver=${driver.type || 'missing'} ledHead=${led.head?.type || 'missing'}`)
+  led.head?.type === 'py32' &&
+  tts.type === 'remote' &&
+  typeof tts.host === 'string' &&
+  typeof tts.port === 'number'
+process.stdout.write(ok ? 'ready' : `driver=${driver.type || 'missing'} ledHead=${led.head?.type || 'missing'} tts=${tts.type || 'missing'}:${tts.host || 'missing'}:${tts.port || 'missing'}`)
 NODE
 )"
   if [ "$host_status" = "ready" ]; then
-    pass "host manifest is patched for CoreS3/K151 servo and head LED"
+    pass "host manifest is patched for CoreS3/K151 servo, head LED, and remote TTS"
   else
     fail "host manifest is not patched for CoreS3/K151 ($host_status); rerun prepare"
   fi

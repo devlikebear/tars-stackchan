@@ -5,6 +5,10 @@ bin/
 *.test
 coverage.out
 
+# Python
+__pycache__/
+*.py[cod]
+
 # Local MCP server binary built by `go build ./cmd/tars-stackchan-mcp`.
 mcp-server/tars-stackchan-mcp
 mcp-server/tars-stackchan-control

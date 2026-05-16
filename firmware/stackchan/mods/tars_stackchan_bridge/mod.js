@@ -18,6 +18,7 @@ const TOKEN = bridgeConfig.token ?? ''
 const DEVICE = bridgeConfig.device ?? 'stackchan-k151'
 const FIRMWARE = bridgeConfig.firmware ?? 'tars-stackchan-dev'
 const LED_NAME = bridgeConfig.ledName ?? 'head'
+const SPEECH_PATH_PREFIX = bridgeConfig.speechPathPrefix ?? ''
 const PORT = bridgeConfig.port ?? 80
 let server
 
@@ -112,7 +113,7 @@ function onRobotCreated(robot) {
 
   server.post('/v1/speech', withAuth(async (c) => {
     const request = normalizeSpeechRequest(await readJSON(c))
-    startSpeech(robot, request.text)
+    startSpeech(robot, speechUtterance(request.text))
     return c.json(actionResponse('speak', { text: request.text }))
   }))
 
@@ -158,6 +159,10 @@ function startSpeech(robot, text) {
       trace(`[tars-stackchan] speech failed: ${message}\n`)
     })
   }
+}
+
+function speechUtterance(text) {
+  return SPEECH_PATH_PREFIX ? `${SPEECH_PATH_PREFIX}${encodeURIComponent(text)}` : text
 }
 
 function getIP() {

@@ -91,7 +91,16 @@ uv run --with esptool esptool ...
 
 If the upstream partition table changes, override with `TARS_STACKCHAN_MOD_OFFSET` and `TARS_STACKCHAN_MOD_SIZE`.
 
-For host deploys, `scripts/dev/prepare-firmware-upload.sh` also patches upstream `stackchan/manifest_local.json` for the CoreS3/K151 hardware. This is important because the pinned upstream default sets `driver.type` to `none`, which makes servo-backed head and motion requests return successfully without physical movement.
+For host deploys, `scripts/dev/prepare-firmware-upload.sh` also patches upstream `stackchan/manifest_local.json` for the CoreS3/K151 hardware. This is important because the pinned upstream default sets `driver.type` to `none`, which makes servo-backed head and motion requests return successfully without physical movement. It also points Stack-chan remote TTS at `TARS_STACKCHAN_TTS_HOST:TARS_STACKCHAN_TTS_PORT`; when the host is omitted, the helper uses the Mac's `en0` IP when available.
+
+For local speech testing, run the Gemini 3.1 Flash TTS relay on the Mac before asking Stack-chan to speak:
+
+```bash
+export GEMINI_API_KEY="<google-ai-studio-api-key>"
+scripts/dev/run-local-tts.sh
+```
+
+The helper runs a small `uv`-launched HTTP server that calls the Gemini REST TTS endpoint, wraps the returned 24 kHz mono PCM as WAV, and serves it at `/api/tts?text=...`. Defaults are `TARS_STACKCHAN_TTS_MODEL=gemini-3.1-flash-tts-preview` and `TARS_STACKCHAN_TTS_VOICE=Kore`; the API key can come from `GEMINI_API_KEY` or `TARS_STACKCHAN_GEMINI_API_KEY`.
 
 If the local API is not reachable immediately after flashing, run smoke through the project helper:
 

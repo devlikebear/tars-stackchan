@@ -10,6 +10,17 @@ upstream_commit="$(awk -F= '$1 == "commit" { print $2 }' "$lock_file")"
 target_dir="${TARS_STACKCHAN_UPSTREAM_DIR:-$repo_root/.work/stack-chan}"
 token="${TARS_STACKCHAN_TOKEN:-}"
 target="${TARS_STACKCHAN_TARGET:-esp32/m5stack_cores3}"
+tts_host="${TARS_STACKCHAN_TTS_HOST:-}"
+tts_port="${TARS_STACKCHAN_TTS_PORT:-18080}"
+
+if [ -z "$tts_host" ]; then
+  if command -v ipconfig >/dev/null 2>&1; then
+    tts_host="$(ipconfig getifaddr en0 2>/dev/null || true)"
+  fi
+  if [ -z "$tts_host" ]; then
+    tts_host="$(hostname -I 2>/dev/null | awk '{ print $1 }' || true)"
+  fi
+fi
 
 if ! command -v git >/dev/null 2>&1; then
   echo "git is required" >&2
@@ -52,9 +63,9 @@ else
 fi
 
 if [ -f "$host_manifest" ]; then
-  node - "$host_manifest" "$target" <<'NODE'
+  node - "$host_manifest" "$target" "$tts_host" "$tts_port" <<'NODE'
 const fs = require('fs')
-const [manifestPath, target] = process.argv.slice(2)
+const [manifestPath, target, ttsHost, ttsPort] = process.argv.slice(2)
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 manifest.config ??= {}
 
@@ -85,11 +96,25 @@ if (target === 'esp32/m5stack_cores3') {
     ledPin: 13,
     address: 111,
   }
+  if (ttsHost) {
+    manifest.config.tts = {
+      type: 'remote',
+      host: ttsHost,
+      port: Number(ttsPort),
+      sampleRate: 24000,
+      volume: 0.8,
+    }
+  }
 }
 
 fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
 NODE
   echo "ready: patched host manifest for $target"
+  if [ -n "$tts_host" ]; then
+    echo "ready: patched host TTS remote server to $tts_host:$tts_port"
+  else
+    echo "warning: TARS_STACKCHAN_TTS_HOST is empty; speech requires an external TTS server" >&2
+  fi
 else
   echo "warning: host manifest not found: $host_manifest" >&2
 fi

@@ -11,7 +11,8 @@
       "port": 80,
       "device": "stackchan-k151",
       "firmware": "tars-stackchan-dev",
-      "ledName": "head"
+      "ledName": "head",
+      "speechPathPrefix": "/api/tts?text="
     }
   }
 }
