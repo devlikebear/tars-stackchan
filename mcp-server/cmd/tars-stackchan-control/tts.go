@@ -55,7 +55,7 @@ func runTTSServe(args []string, stderr io.Writer) int {
 	endpoint := fs.String("gemini-endpoint-template", "", "Gemini endpoint template (env TARS_STACKCHAN_GEMINI_ENDPOINT)")
 	sampleRate := fs.Int("sample-rate", 0, "PCM sample rate (default 24000)")
 	promptPrefix := fs.String("prompt-prefix", "", "prepended to every utterance (env TARS_STACKCHAN_TTS_PROMPT_PREFIX)")
-	cacheDir := fs.String("cache-dir", "", "WAV cache directory (env TARS_STACKCHAN_TTS_CACHE, default .work/tts-cache)")
+	cacheDir := fs.String("cache-dir", "", "WAV cache directory (env TARS_STACKCHAN_TTS_CACHE, default: user cache dir)")
 	mdns := fs.Bool("mdns", true, "advertise the relay over mDNS (macOS dns-sd)")
 	mdnsHostname := fs.String("mdns-hostname", tts.DefaultTTSHostname, "mDNS hostname to advertise")
 
