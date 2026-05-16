@@ -114,3 +114,70 @@ func TestRunCommandVersion(t *testing.T) {
 		t.Fatalf("version output = %q, want binary name", stdout.String())
 	}
 }
+
+func TestHostOf(t *testing.T) {
+	cases := map[string]string{
+		"http://stackchan.local":      "stackchan.local",
+		"http://stackchan.local/v1":   "stackchan.local",
+		"https://192.168.219.113:443": "192.168.219.113",
+		"192.168.219.113":             "192.168.219.113",
+		"stackchan.local:80/path":     "stackchan.local",
+		"":                            "",
+	}
+	for in, want := range cases {
+		if got := hostOf(in); got != want {
+			t.Fatalf("hostOf(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestDeviceProbeHint(t *testing.T) {
+	mdns := deviceProbeHint("http://stackchan.local")
+	if !strings.Contains(mdns, "mDNS") || !strings.Contains(mdns, "stackchan.local") {
+		t.Fatalf("mDNS hint = %q, want mDNS guidance mentioning the host", mdns)
+	}
+
+	ip := deviceProbeHint("http://192.168.219.113")
+	if !strings.Contains(ip, "DHCP") {
+		t.Fatalf("IP hint = %q, want DHCP guidance", ip)
+	}
+	if strings.Contains(ip, "mDNS") {
+		t.Fatalf("IP hint should not mention mDNS: %q", ip)
+	}
+}
+
+func TestDoctorMockBridgeWarnsNotRealHardware(t *testing.T) {
+	t.Setenv("TARS_STACKCHAN_BRIDGE", "mock")
+	t.Setenv("TARS_STACKCHAN_BASE_URL", "")
+	t.Setenv("TARS_STACKCHAN_TOKEN", "")
+
+	var stdout, stderr bytes.Buffer
+	if code := runCommand([]string{"doctor", "--skip-device"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit code = %d, stderr = %s", code, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "bridge: mock") {
+		t.Fatalf("doctor output missing bridge line:\n%s", out)
+	}
+	if !strings.Contains(out, "mock bridge does not control real hardware") {
+		t.Fatalf("doctor output missing mock warning:\n%s", out)
+	}
+}
+
+func TestDoctorHTTPTokenNote(t *testing.T) {
+	t.Setenv("TARS_STACKCHAN_BRIDGE", "http")
+	t.Setenv("TARS_STACKCHAN_BASE_URL", "http://stackchan.local")
+	t.Setenv("TARS_STACKCHAN_TOKEN", "secret")
+
+	var stdout, stderr bytes.Buffer
+	if code := runCommand([]string{"doctor", "--skip-device"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit code = %d, stderr = %s", code, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "token: set") {
+		t.Fatalf("doctor output missing token line:\n%s", out)
+	}
+	if !strings.Contains(out, "fails mutating calls with HTTP 401") {
+		t.Fatalf("doctor output missing firmware-token note:\n%s", out)
+	}
+}

@@ -49,6 +49,21 @@ Check the local setup:
 tars-stackchan-mcp doctor
 ```
 
+### Device address
+
+Examples below use `http://stackchan.local`, but `*.local` mDNS does not
+resolve in many networks. If a probe fails, set `TARS_STACKCHAN_BASE_URL` to
+the device IP printed in the firmware boot log or returned by
+`GET /v1/status` (DHCP addresses can change between boots). `doctor` prints an
+actionable hint when the probe fails, and warns when it is running against the
+mock bridge instead of real hardware.
+
+The firmware bearer token is flashed into the bridge MOD and is not
+recoverable afterwards. `GET /v1/status` is unauthenticated, so `doctor` can
+report `device: connected` while mutating calls still fail with HTTP 401 if
+`TARS_STACKCHAN_TOKEN` does not match the flashed token. Re-flash the MOD with
+a known token to resync.
+
 ## MCP Tools
 
 The default MCP tools are:

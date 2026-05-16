@@ -83,8 +83,11 @@ If the device does not answer HTTP immediately after direct flash, a USB hard re
 
 ## Smoke Commands
 
+Use the device IP from the firmware boot log or `GET /v1/status`; `stackchan.local`
+mDNS is not guaranteed to resolve (see Known Limitations).
+
 ```bash
-export TARS_STACKCHAN_BASE_URL=http://stackchan.local
+export TARS_STACKCHAN_BASE_URL=http://192.168.219.113
 export TARS_STACKCHAN_TOKEN="<local-token>"
 scripts/test/hardware-smoke.sh
 ```

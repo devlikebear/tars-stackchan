@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -182,6 +183,9 @@ func runDoctorCommand(args []string, stdout io.Writer, stderr io.Writer) int {
 
 	bridgeMode := strings.ToLower(strings.TrimSpace(envDefault("TARS_STACKCHAN_BRIDGE", "mock")))
 	fmt.Fprintf(stdout, "bridge: %s\n", bridgeMode)
+	if bridgeMode == "mock" {
+		fmt.Fprintln(stdout, "hint: mock bridge does not control real hardware; set TARS_STACKCHAN_BRIDGE=http and TARS_STACKCHAN_BASE_URL=<device-ip> for hardware checks")
+	}
 	if bridgeMode == "http" {
 		fmt.Fprintf(stdout, "base_url: %s\n", envDefault("TARS_STACKCHAN_BASE_URL", "http://stackchan.local"))
 		if strings.TrimSpace(os.Getenv("TARS_STACKCHAN_TOKEN")) == "" {
@@ -189,6 +193,7 @@ func runDoctorCommand(args []string, stdout io.Writer, stderr io.Writer) int {
 			ok = false
 		} else {
 			fmt.Fprintln(stdout, "token: set")
+			fmt.Fprintln(stdout, "hint: GET /v1/status is unauthenticated; a token that does not match the one flashed into the firmware MOD still fails mutating calls with HTTP 401")
 		}
 	}
 
@@ -215,6 +220,9 @@ func runDoctorCommand(args []string, stdout io.Writer, stderr io.Writer) int {
 			status, err := bridge.GetStatus(ctx)
 			if err != nil {
 				fmt.Fprintf(stdout, "device: not ready (%v)\n", err)
+				if hint := deviceProbeHint(envDefault("TARS_STACKCHAN_BASE_URL", "http://stackchan.local")); hint != "" {
+					fmt.Fprintln(stdout, hint)
+				}
 				ok = false
 			} else {
 				fmt.Fprintf(stdout, "device: connected=%t firmware=%s ip=%s\n", status.Connected, status.Firmware, status.IP)
@@ -226,6 +234,37 @@ func runDoctorCommand(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// deviceProbeHint returns an actionable hint when the device status probe
+// fails. mDNS (`*.local`) frequently does not resolve, and DHCP-assigned IPs
+// change, so point users at the IP from the firmware boot log / status JSON.
+func deviceProbeHint(baseURL string) string {
+	host := hostOf(baseURL)
+	if host != "" && strings.HasSuffix(strings.ToLower(host), ".local") {
+		return "hint: " + host + " relies on mDNS which often fails to resolve; set TARS_STACKCHAN_BASE_URL to the device IP from the firmware boot log or GET /v1/status"
+	}
+	return "hint: verify the device joined Wi-Fi and TARS_STACKCHAN_BASE_URL points to its current IP (DHCP addresses can change between boots)"
+}
+
+// hostOf extracts the hostname from a base URL, tolerating bare host:port and
+// unparsable input.
+func hostOf(baseURL string) string {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		return ""
+	}
+	if parsed, err := url.Parse(baseURL); err == nil && parsed.Hostname() != "" {
+		return parsed.Hostname()
+	}
+	host := baseURL
+	if i := strings.Index(host, "://"); i >= 0 {
+		host = host[i+3:]
+	}
+	if i := strings.IndexAny(host, "/:"); i >= 0 {
+		host = host[:i]
+	}
+	return host
 }
 
 func parseInstallFlags(name string, args []string, stderr io.Writer) (installConfig, bool) {
