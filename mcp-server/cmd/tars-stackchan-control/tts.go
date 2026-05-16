@@ -55,6 +55,8 @@ func runTTSServe(args []string, stderr io.Writer) int {
 	sampleRate := fs.Int("sample-rate", 0, "PCM sample rate (default 24000)")
 	promptPrefix := fs.String("prompt-prefix", "", "prepended to every utterance (env TARS_STACKCHAN_TTS_PROMPT_PREFIX)")
 	cacheDir := fs.String("cache-dir", "", "WAV cache directory (env TARS_STACKCHAN_TTS_CACHE, default .work/tts-cache)")
+	mdns := fs.Bool("mdns", true, "advertise the relay over mDNS (macOS dns-sd)")
+	mdnsHostname := fs.String("mdns-hostname", tts.DefaultTTSHostname, "mDNS hostname to advertise")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -71,7 +73,12 @@ func runTTSServe(args []string, stderr io.Writer) int {
 		CacheDir:         *cacheDir,
 	})
 
-	if err := tts.Serve(context.Background(), cfg, *host, *port); err != nil {
+	if err := tts.Serve(context.Background(), cfg, tts.ServeOptions{
+		Host:         *host,
+		Port:         *port,
+		MDNS:         *mdns,
+		MDNSHostname: *mdnsHostname,
+	}); err != nil {
 		fmt.Fprintf(stderr, "tts serve failed: %v\n", err)
 		return 1
 	}

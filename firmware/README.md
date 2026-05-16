@@ -113,12 +113,20 @@ This matters because the pinned upstream default can use `driver.type: none`, wh
 
 ## Speech TTS Relay
 
-Start the Gemini 3.1 Flash TTS relay on the Mac before asking Stack-chan to speak:
+Start the Gemini 3.1 Flash TTS relay on the Mac before asking Stack-chan to
+speak. The relay is the Go binary and advertises `tars-stackchan-tts.local`
+over mDNS, so the firmware resolves the current relay IP at boot without a
+re-flash when the Mac's DHCP address changes:
 
 ```bash
 export GEMINI_API_KEY="<google-ai-studio-api-key>"
-scripts/dev/run-local-tts.sh
+export TARS_STACKCHAN_TOKEN="<local-token>"
+tars-stackchan-control tts serve
 ```
+
+If mDNS does not resolve on your network, bake a fixed IP fallback by
+preparing/uploading firmware with `TARS_STACKCHAN_TTS_HOST=<mac-ip>`.
+(`scripts/dev/run-local-tts.sh` stays as a legacy dev wrapper until Phase 4.)
 
 Defaults:
 

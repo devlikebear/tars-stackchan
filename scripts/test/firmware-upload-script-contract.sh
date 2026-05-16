@@ -43,6 +43,12 @@ assert_contains "$prepare_script" "type: 'm5stackchan'"
 assert_contains "$prepare_script" "led.head"
 assert_contains "$prepare_script" "servoPower"
 assert_contains "$prepare_script" "TARS_STACKCHAN_TTS_HOST"
+# Phase 2: default to the mDNS hostname (not a DHCP-volatile IP); the env
+# override must still win. Keep this literal in sync with
+# tts.DefaultTTSHostname (mcp-server/internal/tts/mdns.go).
+assert_contains "$prepare_script" 'tts_host="tars-stackchan-tts.local"'
+assert_contains "$prepare_script" 'tts_host="${TARS_STACKCHAN_TTS_HOST:-}"'
+assert_contains "$prepare_script" "is an mDNS name; the relay must advertise it"
 assert_contains "$prepare_script" "TARS_STACKCHAN_TTS_VOLUME:-0.15"
 assert_contains "$prepare_script" "type: 'remote'"
 assert_contains "$prepare_script" "volume: Number(ttsVolume)"

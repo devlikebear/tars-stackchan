@@ -97,6 +97,28 @@
 
 ---
 
-## 실측 결과 (작업 0에서 채움)
+## 실측 결과 (작업 0, 2026-05-16 확정)
 
-> dns-sd 확정 명령, ESP32 해석 성공/실패, 라우터 환경 메모를 여기 기록.
+**확정 명령:**
+```
+dns-sd -P tars-stackchan-tts _http._tcp local <port> tars-stackchan-tts.local <primary-ipv4>
+```
+
+검증 (macOS 호스트, en0=192.168.219.115):
+- `dns-sd -G v4 tars-stackchan-tts.local` → `192.168.219.115` 해석됨 (TTL 240)
+- `dscacheutil -q host -a name tars-stackchan-tts.local` → IP 반환
+- `ping tars-stackchan-tts.local` → 응답. 즉 표준 mDNS 리졸버(ESP32 포함) 해석 가능
+- 등록 로그: `Name now registered and active` (레코드 + 서비스 양쪽)
+
+**핵심 제약 / 설계 반영:**
+- `dns-sd -P` 는 **IP를 인자로 고정**한다. 릴레이가 기동 시 현재 primary IPv4 를
+  스스로 계산해 넘겨야 한다. (Go 무의존 방법: `net.Dial("udp","8.8.8.8:80")` 후
+  `LocalAddr().IP` — 실제 패킷 안 보냄, outbound source IP 획득.)
+- `-P` 등록은 프로세스 수명에 묶인다(스파이크에서 kill 시 해석 중단 확인). →
+  릴레이 종료 시 mDNS 광고 자동 정리됨 (Python 수동성 제거 목표 충족).
+- 실행 중 Mac IP 변경 시 `-P` 레코드는 stale. 완화책: brew service(Phase 3)가
+  관리, doctor(Phase 4)가 mDNS 해석 사전 진단, `TARS_STACKCHAN_TTS_HOST=<IP>`
+  1급 폴백 유지(알려진 리스크 섹션). Phase 2 범위에서는 기동 시점 IP 고정으로 충분.
+- 참고: macOS는 `<LocalHostName>.local`(예 `chshin-macbook.local`)을 자동 Bonjour
+  광고하며 IP 변경을 네이티브 추적하나, 머신명 종속이라 프로젝트 고정명으로 부적합 →
+  `-P` 프록시 방식 채택.
