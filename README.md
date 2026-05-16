@@ -74,6 +74,27 @@ printf '%s\n' \
 
 The response shows `tilt_deg` clamped to `85`.
 
+## Local Control GUI
+
+Run the browser-based control panel before connecting an AI client:
+
+```bash
+cd mcp-server
+TARS_STACKCHAN_BASE_URL=http://stackchan.local \
+TARS_STACKCHAN_TOKEN="$TARS_STACKCHAN_TOKEN" \
+go run ./cmd/tars-stackchan-control
+```
+
+Open `http://127.0.0.1:8787`. The panel exposes status, expression, head, LED, motion, and speech controls through the same bridge contract as the MCP server.
+
+For UI-only development without hardware:
+
+```bash
+TARS_STACKCHAN_BRIDGE=mock go run ./cmd/tars-stackchan-control
+```
+
+Override the listen address with `TARS_STACKCHAN_CONTROL_ADDR`, for example `TARS_STACKCHAN_CONTROL_ADDR=127.0.0.1:8790`.
+
 ## Repository Layout
 
 ```text

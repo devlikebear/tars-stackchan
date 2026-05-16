@@ -7,6 +7,7 @@ coverage.out
 
 # Local MCP server binary built by `go build ./cmd/tars-stackchan-mcp`.
 mcp-server/tars-stackchan-mcp
+mcp-server/tars-stackchan-control
 
 # Local editor/runtime files
 .env
