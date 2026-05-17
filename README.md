@@ -223,13 +223,47 @@ make perceive-serve
 ```
 
 Architecture (role split): tars-stackchan is the body (sensors + actuation),
-TARS is the brain (LLM + memory + persona). See `docs/plans/embodied-bot-roadmap.md`.
+TARS is the brain (LLM + memory + persona). Perception posts include the
+provider-neutral `x-embodiment`, `owner`, `modality`, and `media_ref` fields,
+while preserving the legacy `stackchan` webhook fields for older TARS builds.
+See `docs/plans/embodied-bot-roadmap.md`.
 
-> **Camera status:** on real M5Stack CoreS3, camera capture currently resets
-> the device — the camera SCCB shares the internal I2C bus already owned by
-> the Moddable peripheral driver (`docs/plans/embodied-bot-phase-1-spike.md`,
-> Spike S). The microphone (I2S) is unaffected and verified on hardware, so
-> run with `TARS_STACKCHAN_PERCEIVE_CAMERA=off` for audio-only operation.
+For autonomous TARS runs, pair the MCP server with a matching embodiment
+provider entry. `endpoint` names the MCP server used for action egress:
+
+```yaml
+mcp:
+  servers:
+    tars-stackchan:
+      command: /absolute/path/to/tars-stackchan-mcp
+      env:
+        TARS_STACKCHAN_BRIDGE: http
+        TARS_STACKCHAN_BASE_URL: http://stackchan.local
+        TARS_STACKCHAN_TOKEN: replace-with-local-token
+
+embodiment:
+  enabled: true
+  providers:
+    - name: stackchan
+      enabled: true
+      transport: mcp
+      endpoint: tars-stackchan
+      capabilities: [vision, hearing, speech, expression, motion, led]
+      session_id: sess_main
+      owner_only_directive: true
+      min_trigger_interval: 30s
+      max_triggers_per_hour: 60
+```
+
+If you run `TARS_STACKCHAN_PERCEIVE_CAMERA=off` for audio-only hardware mode,
+omit `vision` from the provider capabilities until camera capture is enabled.
+TARS maps cognition `tars-body-action` blocks back to this MCP provider
+(`speak`, `express`, `move`, `led`) only when the declared capability allows it.
+
+> **Camera status:** real CoreS3 camera capture is verified through the
+> `esp_video`/V4L2 host overlay. If you are on older firmware, or want the
+> lowest-risk unattended loop, run with `TARS_STACKCHAN_PERCEIVE_CAMERA=off`
+> and omit `vision` from the TARS provider capabilities.
 
 For UI-only development without hardware:
 

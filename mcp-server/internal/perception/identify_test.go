@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/devlikebear/tars-stackchan/mcp-server/internal/stackchan"
+	"github.com/devlikebear/tars-stackchan/mcp-server/internal/bodyprovider"
 )
 
 func idCfg() Config {
@@ -30,46 +30,46 @@ func TestStubIdentifier(t *testing.T) {
 	tests := []struct {
 		name     string
 		profile  *OwnerProfile
-		snap     stackchan.CameraSnapshot
-		clip     stackchan.AudioClip
+		snap     bodyprovider.CameraSnapshot
+		clip     bodyprovider.AudioClip
 		want     string
 		modality string
 	}{
 		{
 			name:     "not enrolled -> unknown",
 			profile:  &OwnerProfile{},
-			snap:     stackchan.CameraSnapshot{Data: ownerFace},
+			snap:     bodyprovider.CameraSnapshot{Data: ownerFace},
 			want:     LabelUnknown,
 			modality: "none",
 		},
 		{
 			name:     "owner face+voice match -> owner (both)",
 			profile:  enrolled,
-			snap:     stackchan.CameraSnapshot{Data: ownerFace},
-			clip:     stackchan.AudioClip{Data: ownerVoice},
+			snap:     bodyprovider.CameraSnapshot{Data: ownerFace},
+			clip:     bodyprovider.AudioClip{Data: ownerVoice},
 			want:     LabelOwner,
 			modality: "both",
 		},
 		{
 			name:     "owner voice only -> owner (voice)",
 			profile:  enrolled,
-			clip:     stackchan.AudioClip{Data: ownerVoice},
+			clip:     bodyprovider.AudioClip{Data: ownerVoice},
 			want:     LabelOwner,
 			modality: "voice",
 		},
 		{
 			name:     "different person both -> stranger (both)",
 			profile:  enrolled,
-			snap:     stackchan.CameraSnapshot{Data: otherFace},
-			clip:     stackchan.AudioClip{Data: otherVoice},
+			snap:     bodyprovider.CameraSnapshot{Data: otherFace},
+			clip:     bodyprovider.AudioClip{Data: otherVoice},
 			want:     LabelStranger,
 			modality: "both",
 		},
 		{
 			name:     "conflict: owner face, stranger voice -> unknown",
 			profile:  enrolled,
-			snap:     stackchan.CameraSnapshot{Data: ownerFace},
-			clip:     stackchan.AudioClip{Data: otherVoice},
+			snap:     bodyprovider.CameraSnapshot{Data: ownerFace},
+			clip:     bodyprovider.AudioClip{Data: otherVoice},
 			want:     LabelUnknown,
 			modality: "both",
 		},
@@ -103,8 +103,8 @@ func TestOwnerStoreEnrollRoundTripAndPerms(t *testing.T) {
 		t.Fatal("fresh store should not be enrolled")
 	}
 
-	faces := []stackchan.CameraSnapshot{{Data: []byte("f1")}, {Data: []byte("f2")}}
-	voices := []stackchan.AudioClip{{Data: []byte("v1")}}
+	faces := []bodyprovider.CameraSnapshot{{Data: []byte("f1")}, {Data: []byte("f2")}}
+	voices := []bodyprovider.AudioClip{{Data: []byte("v1")}}
 	prof, err := store.Enroll("me", faces, voices)
 	if err != nil {
 		t.Fatalf("enroll: %v", err)
@@ -120,7 +120,7 @@ func TestOwnerStoreEnrollRoundTripAndPerms(t *testing.T) {
 
 	// The fixture used to enroll must now identify as owner.
 	id := StubIdentifier{Profile: loaded, Config: idCfg()}
-	got, _ := id.Identify(context.Background(), stackchan.CameraSnapshot{Data: []byte("f1")}, stackchan.AudioClip{Data: []byte("v1")})
+	got, _ := id.Identify(context.Background(), bodyprovider.CameraSnapshot{Data: []byte("f1")}, bodyprovider.AudioClip{Data: []byte("v1")})
 	if got.Label != LabelOwner {
 		t.Fatalf("enrolled fixture should be owner, got %s", got.Label)
 	}
@@ -148,7 +148,7 @@ func TestEnrollRejectsEmptySamples(t *testing.T) {
 	if _, err := store.Enroll("x", nil, nil); err == nil {
 		t.Fatal("expected error with no samples")
 	}
-	if _, err := store.Enroll("x", []stackchan.CameraSnapshot{{Data: nil}}, nil); err == nil {
+	if _, err := store.Enroll("x", []bodyprovider.CameraSnapshot{{Data: nil}}, nil); err == nil {
 		t.Fatal("expected error when all samples empty")
 	}
 }
@@ -162,8 +162,8 @@ func TestStepAttachesOwnerIdentityAndClause(t *testing.T) {
 	prof := &OwnerProfile{FaceHashes: []string{digest(face)}, CreatedAt: 1}
 
 	fb := &fakeBridge{
-		sensor: stackchan.SensorState{Motion: true},
-		snap:   stackchan.CameraSnapshot{ContentType: "image/jpeg", Data: face},
+		sensor: bodyprovider.SensorState{Motion: true},
+		snap:   bodyprovider.CameraSnapshot{ContentType: "image/jpeg", Data: face},
 	}
 	sink := &captureSink{}
 	d := Deps{

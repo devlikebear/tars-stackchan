@@ -11,7 +11,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/devlikebear/tars-stackchan/mcp-server/internal/stackchan"
+	"github.com/devlikebear/tars-stackchan/mcp-server/internal/bodyprovider"
 )
 
 // OwnerProfile is the locally-stored owner fingerprint. Raw reference media
@@ -73,7 +73,7 @@ func (s OwnerStore) Reset() error {
 // Enroll captures faceN snapshots + voiceM clips from the bridge and writes
 // the profile + reference media (0600 files, 0700 dir). Existing data is
 // replaced.
-func (s OwnerStore) Enroll(name string, faces []stackchan.CameraSnapshot, voices []stackchan.AudioClip) (*OwnerProfile, error) {
+func (s OwnerStore) Enroll(name string, faces []bodyprovider.CameraSnapshot, voices []bodyprovider.AudioClip) (*OwnerProfile, error) {
 	if len(faces) == 0 && len(voices) == 0 {
 		return nil, errors.New("enroll: at least one face or voice sample is required")
 	}

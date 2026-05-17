@@ -39,11 +39,15 @@ func (s LogSink) Post(_ context.Context, obs Observation) error {
 // /v1/channels/webhook/inbound/<channel>). Documented in
 // docs/plans/embodied-bot-phase-2-perception-loop.md.
 type webhookPayload struct {
-	Source   string  `json:"source"` // always "stackchan"
-	TS       int64   `json:"ts"`
-	Trigger  string  `json:"trigger"`
-	Salience float64 `json:"salience"`
-	Summary  string  `json:"summary"`
+	XEmbodiment bool    `json:"x-embodiment"`
+	Source      string  `json:"source"` // always "stackchan"
+	TS          int64   `json:"ts"`
+	Trigger     string  `json:"trigger"`
+	Salience    float64 `json:"salience"`
+	Summary     string  `json:"summary"`
+	Owner       string  `json:"owner"`
+	Modality    string  `json:"modality"`
+	MediaRef    string  `json:"media_ref,omitempty"`
 	// Flattened identity so TARS's generic webhook channel can branch the
 	// persona without Stack-chan-specific parsing.
 	Identity           string  `json:"identity"` // owner | stranger | unknown
@@ -71,11 +75,15 @@ type TARSWebhookSink struct {
 
 func (s TARSWebhookSink) Post(ctx context.Context, obs Observation) error {
 	body, err := json.Marshal(webhookPayload{
+		XEmbodiment:        true,
 		Source:             "stackchan",
 		TS:                 obs.TS,
 		Trigger:            obs.Trigger,
 		Salience:           obs.Salience,
 		Summary:            obs.Summary,
+		Owner:              obs.Identity.Label,
+		Modality:           modalityFromObservation(obs),
+		MediaRef:           mediaRefFromObservation(obs),
 		Identity:           obs.Identity.Label,
 		IdentityConfidence: obs.Identity.Confidence,
 		IdentityModality:   obs.Identity.Modality,
@@ -142,4 +150,39 @@ func (s TARSWebhookSink) postOnce(ctx context.Context, client *http.Client, endp
 		return fmt.Errorf("tars webhook returned %d: %s", resp.StatusCode, strings.TrimSpace(string(snippet)))
 	}
 	return nil
+}
+
+func modalityFromObservation(obs Observation) string {
+	switch strings.ToLower(strings.TrimSpace(obs.Identity.Modality)) {
+	case "voice":
+		return "audio"
+	case "face":
+		return "vision"
+	case "both":
+		if strings.TrimSpace(obs.AudioRef) != "" {
+			return "audio"
+		}
+		if strings.TrimSpace(obs.ImageRef) != "" {
+			return "vision"
+		}
+	}
+	if strings.TrimSpace(obs.AudioRef) != "" {
+		return "audio"
+	}
+	if strings.TrimSpace(obs.ImageRef) != "" {
+		return "vision"
+	}
+	return "sensor"
+}
+
+func mediaRefFromObservation(obs Observation) string {
+	if modalityFromObservation(obs) == "audio" {
+		if ref := strings.TrimSpace(obs.AudioRef); ref != "" {
+			return ref
+		}
+	}
+	if ref := strings.TrimSpace(obs.ImageRef); ref != "" {
+		return ref
+	}
+	return strings.TrimSpace(obs.AudioRef)
 }

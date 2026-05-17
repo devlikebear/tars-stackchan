@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/devlikebear/tars-stackchan/mcp-server/internal/stackchan"
+	"github.com/devlikebear/tars-stackchan/mcp-server/internal/bodyprovider"
 )
 
 func baseCfg() Config {
@@ -32,14 +32,14 @@ func TestDecideTrigger(t *testing.T) {
 	tests := []struct {
 		name       string
 		state      triggerState
-		sensor     stackchan.SensorState
+		sensor     bodyprovider.SensorState
 		now        time.Time
 		wantFire   bool
 		wantReason string
 	}{
 		{
 			name:       "first tick idle fires (zero state)",
-			sensor:     stackchan.SensorState{},
+			sensor:     bodyprovider.SensorState{},
 			now:        t0,
 			wantFire:   true,
 			wantReason: "idle",
@@ -47,7 +47,7 @@ func TestDecideTrigger(t *testing.T) {
 		{
 			name:       "motion fires event",
 			state:      triggerState{lastTrigger: t0.Add(-10 * time.Second), lastIdle: t0},
-			sensor:     stackchan.SensorState{Motion: true},
+			sensor:     bodyprovider.SensorState{Motion: true},
 			now:        t0.Add(10 * time.Second),
 			wantFire:   true,
 			wantReason: "event",
@@ -55,7 +55,7 @@ func TestDecideTrigger(t *testing.T) {
 		{
 			name:       "sound at threshold fires event",
 			state:      triggerState{lastTrigger: t0.Add(-10 * time.Second), lastIdle: t0},
-			sensor:     stackchan.SensorState{SoundLevel: 0.2},
+			sensor:     bodyprovider.SensorState{SoundLevel: 0.2},
 			now:        t0.Add(10 * time.Second),
 			wantFire:   true,
 			wantReason: "event",
@@ -63,7 +63,7 @@ func TestDecideTrigger(t *testing.T) {
 		{
 			name:       "event debounced within MinTriggerInterval, idle not due -> no fire",
 			state:      triggerState{lastTrigger: t0, lastIdle: t0},
-			sensor:     stackchan.SensorState{Motion: true},
+			sensor:     bodyprovider.SensorState{Motion: true},
 			now:        t0.Add(2 * time.Second),
 			wantFire:   false,
 			wantReason: "",
@@ -71,7 +71,7 @@ func TestDecideTrigger(t *testing.T) {
 		{
 			name:       "quiet but idle interval elapsed -> idle",
 			state:      triggerState{lastTrigger: t0, lastIdle: t0},
-			sensor:     stackchan.SensorState{SoundLevel: 0.05},
+			sensor:     bodyprovider.SensorState{SoundLevel: 0.05},
 			now:        t0.Add(31 * time.Second),
 			wantFire:   true,
 			wantReason: "idle",
@@ -79,7 +79,7 @@ func TestDecideTrigger(t *testing.T) {
 		{
 			name:       "quiet and idle not elapsed -> no fire",
 			state:      triggerState{lastTrigger: t0, lastIdle: t0},
-			sensor:     stackchan.SensorState{},
+			sensor:     bodyprovider.SensorState{},
 			now:        t0.Add(5 * time.Second),
 			wantFire:   false,
 			wantReason: "",
@@ -106,11 +106,11 @@ func TestRateLimitBlocksAndTrims(t *testing.T) {
 	// Two captures fill the hourly budget.
 	st.record(t0)
 	st.record(t0.Add(time.Minute))
-	if fire, _ := decideTrigger(cfg, st, stackchan.SensorState{Motion: true}, t0.Add(2*time.Minute)); fire {
+	if fire, _ := decideTrigger(cfg, st, bodyprovider.SensorState{Motion: true}, t0.Add(2*time.Minute)); fire {
 		t.Fatal("expected rate limit to block the third capture within the hour")
 	}
 	// An hour later the window has slid; capture allowed again.
-	if fire, reason := decideTrigger(cfg, st, stackchan.SensorState{Motion: true}, t0.Add(61*time.Minute)); !fire || reason != "event" {
+	if fire, reason := decideTrigger(cfg, st, bodyprovider.SensorState{Motion: true}, t0.Add(61*time.Minute)); !fire || reason != "event" {
 		t.Fatalf("expected event after window slid, got (%v,%q)", fire, reason)
 	}
 	if len(st.recent) != 0 {
@@ -120,20 +120,20 @@ func TestRateLimitBlocksAndTrims(t *testing.T) {
 
 // fakeBridge is a controllable PerceptionBridge for loop tests.
 type fakeBridge struct {
-	sensor   stackchan.SensorState
-	snap     stackchan.CameraSnapshot
-	clip     stackchan.AudioClip
+	sensor   bodyprovider.SensorState
+	snap     bodyprovider.CameraSnapshot
+	clip     bodyprovider.AudioClip
 	camCalls int
 }
 
-func (f *fakeBridge) CameraSnapshot(context.Context, stackchan.SnapshotOptions) (stackchan.CameraSnapshot, error) {
+func (f *fakeBridge) CameraSnapshot(context.Context, bodyprovider.SnapshotOptions) (bodyprovider.CameraSnapshot, error) {
 	f.camCalls++
 	return f.snap, nil
 }
-func (f *fakeBridge) AudioClip(context.Context, stackchan.AudioOptions) (stackchan.AudioClip, error) {
+func (f *fakeBridge) AudioClip(context.Context, bodyprovider.AudioOptions) (bodyprovider.AudioClip, error) {
 	return f.clip, nil
 }
-func (f *fakeBridge) Sensors(context.Context) (stackchan.SensorState, error) { return f.sensor, nil }
+func (f *fakeBridge) Sensors(context.Context) (bodyprovider.SensorState, error) { return f.sensor, nil }
 
 type captureSink struct {
 	mu  sync.Mutex
@@ -151,9 +151,9 @@ func TestStepCapturesSummarizesAndSinks(t *testing.T) {
 	cfg := baseCfg()
 	cfg.CacheDir = t.TempDir()
 	fb := &fakeBridge{
-		sensor: stackchan.SensorState{Motion: true},
-		snap:   stackchan.CameraSnapshot{ContentType: "image/jpeg", Data: []byte{0xFF, 0xD8, 0xFF}},
-		clip:   stackchan.AudioClip{ContentType: "audio/wav", Data: []byte("RIFFxxxxWAVE"), DurationMs: 1500},
+		sensor: bodyprovider.SensorState{Motion: true},
+		snap:   bodyprovider.CameraSnapshot{ContentType: "image/jpeg", Data: []byte{0xFF, 0xD8, 0xFF}},
+		clip:   bodyprovider.AudioClip{ContentType: "audio/wav", Data: []byte("RIFFxxxxWAVE"), DurationMs: 1500},
 	}
 	sink := &captureSink{}
 	now := time.Date(2026, 5, 16, 12, 0, 0, 0, time.UTC)
@@ -187,9 +187,9 @@ func TestCameraDisabledAudioOnlyMode(t *testing.T) {
 	cfg.CacheDir = t.TempDir()
 	cfg.CameraEnabled = false
 	fb := &fakeBridge{
-		sensor: stackchan.SensorState{Motion: true},
-		snap:   stackchan.CameraSnapshot{Data: []byte{0xFF, 0xD8, 0xFF}}, // must NOT be used
-		clip:   stackchan.AudioClip{ContentType: "audio/wav", Data: []byte("RIFFxxxxWAVE"), DurationMs: 1500},
+		sensor: bodyprovider.SensorState{Motion: true},
+		snap:   bodyprovider.CameraSnapshot{Data: []byte{0xFF, 0xD8, 0xFF}}, // must NOT be used
+		clip:   bodyprovider.AudioClip{ContentType: "audio/wav", Data: []byte("RIFFxxxxWAVE"), DurationMs: 1500},
 	}
 	sink := &captureSink{}
 	d := Deps{
@@ -227,7 +227,15 @@ func TestTARSWebhookSinkPostsAgreedPayload(t *testing.T) {
 	defer srv.Close()
 
 	sink := TARSWebhookSink{BaseURL: srv.URL, Channel: "stackchan", Token: "secret"}
-	obs := Observation{TS: 123, Trigger: "event", Summary: "someone waved", Salience: 0.7, ImageRef: "obs-123.jpg"}
+	obs := Observation{
+		TS:       123,
+		Trigger:  "event",
+		Summary:  "owner spoke",
+		Salience: 0.7,
+		Identity: Identity{Label: LabelOwner, Confidence: 0.9, Modality: "voice"},
+		ImageRef: "obs-123.jpg",
+		AudioRef: "obs-123.wav",
+	}
 	if err := sink.Post(context.Background(), obs); err != nil {
 		t.Fatalf("post: %v", err)
 	}
@@ -237,7 +245,13 @@ func TestTARSWebhookSinkPostsAgreedPayload(t *testing.T) {
 	if gotAuth != "Bearer secret" {
 		t.Fatalf("auth = %q", gotAuth)
 	}
-	if gotBody.Source != "stackchan" || gotBody.Summary != "someone waved" || gotBody.Text != "someone waved" || gotBody.Salience != 0.7 {
+	if !gotBody.XEmbodiment || gotBody.Source != "stackchan" || gotBody.Summary != "owner spoke" || gotBody.Text != "owner spoke" || gotBody.Salience != 0.7 {
+		t.Fatalf("payload = %#v", gotBody)
+	}
+	if gotBody.Owner != "owner" || gotBody.Modality != "audio" || gotBody.MediaRef != "obs-123.wav" {
+		t.Fatalf("percept fields = %#v", gotBody)
+	}
+	if gotBody.Identity != "owner" || gotBody.IdentityModality != "voice" {
 		t.Fatalf("payload = %#v", gotBody)
 	}
 }
