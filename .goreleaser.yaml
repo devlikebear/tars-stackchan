@@ -39,11 +39,30 @@ builds:
       - -X github.com/devlikebear/tars-stackchan/mcp-server/internal/buildinfo.Commit={{ .Commit }}
       - -X github.com/devlikebear/tars-stackchan/mcp-server/internal/buildinfo.Date={{ .Date }}
 
+  - id: tars-stackchan-host
+    dir: mcp-server
+    main: ./cmd/tars-stackchan-host
+    binary: tars-stackchan-host
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/devlikebear/tars-stackchan/mcp-server/internal/buildinfo.Version={{ .Version }}
+      - -X github.com/devlikebear/tars-stackchan/mcp-server/internal/buildinfo.Commit={{ .Commit }}
+      - -X github.com/devlikebear/tars-stackchan/mcp-server/internal/buildinfo.Date={{ .Date }}
+
 archives:
   - id: tars-stackchan
     ids:
       - tars-stackchan-mcp
       - tars-stackchan-control
+      - tars-stackchan-host
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     files:
@@ -76,13 +95,16 @@ brews:
     install: |
       libexec.install "tars-stackchan-mcp"
       libexec.install "tars-stackchan-control"
+      libexec.install "tars-stackchan-host"
       pkgshare.install "scripts"
       pkgshare.install "firmware"
       (bin/"tars-stackchan-mcp").write_env_script libexec/"tars-stackchan-mcp", TARS_STACKCHAN_REPO_ROOT: pkgshare
       (bin/"tars-stackchan-control").write_env_script libexec/"tars-stackchan-control", TARS_STACKCHAN_REPO_ROOT: pkgshare
+      (bin/"tars-stackchan-host").write_env_script libexec/"tars-stackchan-host", TARS_STACKCHAN_REPO_ROOT: pkgshare
     test: |
       assert_match version.to_s, shell_output("#{bin}/tars-stackchan-mcp --version")
       assert_match version.to_s, shell_output("#{bin}/tars-stackchan-control --version")
+      assert_match version.to_s, shell_output("#{bin}/tars-stackchan-host --version")
       assert_match "TARS_STACKCHAN_ENABLE_FIRMWARE_TOOLS=1", shell_output("#{bin}/tars-stackchan-mcp config --target claude-code --firmware-tools")
     service: |
       run [opt_bin/"tars-stackchan-control", "tts", "serve"]

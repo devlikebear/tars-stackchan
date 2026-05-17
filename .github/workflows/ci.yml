@@ -49,5 +49,8 @@ jobs:
       - name: Test Go TTS relay contract
         run: scripts/test/tts-relay-go-contract.sh
 
+      - name: Test host body companion contract
+        run: scripts/test/hostbody-smoke-contract.sh
+
       - name: Test release config contract
         run: scripts/test/release-config-contract.sh

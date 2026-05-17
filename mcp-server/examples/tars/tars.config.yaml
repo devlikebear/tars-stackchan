@@ -7,6 +7,12 @@ mcp:
         TARS_STACKCHAN_BRIDGE: http
         TARS_STACKCHAN_BASE_URL: http://stackchan.local
         TARS_STACKCHAN_TOKEN: replace-with-local-token
+    tars-stackchan-host:
+      command: /absolute/path/to/tars-stackchan/mcp-server/tars-stackchan-host
+      args: []
+      env:
+        TARS_STACKCHAN_HOST_TTS_BASE_URL: http://127.0.0.1:18080
+        TARS_STACKCHAN_HOST_TTS_TOKEN: replace-with-local-token
 
 embodiment:
   enabled: true
@@ -24,5 +30,17 @@ embodiment:
         - led
       session_id: sess_main
       owner_only_directive: true
+      min_trigger_interval: 30s
+      max_triggers_per_hour: 60
+    - name: host
+      enabled: true
+      transport: mcp
+      endpoint: tars-stackchan-host
+      capabilities:
+        - hearing
+        - speech
+      session_id: sess_main
+      owner_only_directive: false
+      trigger_observations: true
       min_trigger_interval: 30s
       max_triggers_per_hour: 60
