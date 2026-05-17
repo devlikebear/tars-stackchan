@@ -36,6 +36,29 @@ test('bridge mod ships its retained HTTP service modules', async () => {
   assert.doesNotMatch(source, /from\s+['"]http-server-service['"]/)
 })
 
+test('bridge mod advertises stackchan.local over mDNS', async () => {
+  const manifest = JSON.parse(await readFile(join(modDir, 'manifest.json'), 'utf8'))
+  const source = await readFile(join(modDir, 'mod.js'), 'utf8')
+
+  assert.doesNotMatch(JSON.stringify(manifest), /network\/mdns/)
+  assert.doesNotMatch(JSON.stringify(manifest), /network\/dns/)
+  assert.doesNotMatch(JSON.stringify(manifest), /"preload"/)
+  assert.equal(manifest.config.tarsStackchan.mdnsHostName, 'stackchan')
+  assert.match(source, /import\s+MDNS\s+from\s+['"]mdns['"]/)
+  assert.match(source, /new\s+MDNS\(\{\s*hostName:\s*MDNS_HOST_NAME\s*\}/)
+  assert.match(source, /name:\s*['"]http['"]/)
+  assert.match(source, /protocol:\s*['"]tcp['"]/)
+  assert.match(source, /mdns\.add\(service\)/)
+  assert.match(source, /mDNS advertised http:\/\/\$\{mdnsHostName\}\.local/)
+})
+
+test('bridge mod prints the reachable base URL to serial logs', async () => {
+  const source = await readFile(join(modDir, 'mod.js'), 'utf8')
+
+  assert.match(source, /const\s+ip\s*=\s*getIP\(\)/)
+  assert.match(source, /local control API listening at http:\/\/\$\{ip\}/)
+})
+
 test('HTTP response headers never pass undefined values to Moddable Headers', async () => {
   const source = await readFile(join(modDir, 'http-server-service.js'), 'utf8')
 

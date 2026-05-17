@@ -52,11 +52,34 @@ tars-stackchan-mcp doctor
 ### Device address
 
 Examples below use `http://stackchan.local`, but `*.local` mDNS does not
-resolve in many networks. If a probe fails, set `TARS_STACKCHAN_BASE_URL` to
-the device IP printed in the firmware boot log or returned by
-`GET /v1/status` (DHCP addresses can change between boots). `doctor` prints an
-actionable hint when the probe fails, and warns when it is running against the
-mock bridge instead of real hardware.
+resolve in every network. The TARS firmware MOD claims the `stackchan.local`
+hostname over mDNS and advertises the HTTP service, but some routers still
+block or stale-cache multicast discovery. If a probe fails, set
+`TARS_STACKCHAN_BASE_URL` to the device IP printed in the firmware boot log or
+returned by `GET /v1/status` (DHCP addresses can change between boots).
+`doctor` prints an actionable hint when the probe fails, and warns when it is
+running against the mock bridge instead of real hardware.
+
+For Makefile workflows, leaving `TARS_STACKCHAN_BASE_URL` unset enables
+auto-discovery. `make run-control`, `make run-mcp-http`, `make doctor-http`,
+and related hardware targets first probe `stackchan.local`, then reset/read
+USB serial output for IP candidates and validate them with `GET /v1/status`.
+If discovery fails, these targets stop instead of starting a broken
+`stackchan.local` control session.
+
+```bash
+make discover-base-url
+make run-control
+
+# If you do not want USB reset during discovery:
+TARS_STACKCHAN_DISCOVER_RESET=0 make run-control
+```
+
+Explicit values still win:
+
+```bash
+TARS_STACKCHAN_BASE_URL=http://192.168.10.20 make run-control
+```
 
 The firmware bearer token is flashed into the bridge MOD and is not
 recoverable afterwards. `GET /v1/status` is unauthenticated, so `doctor` can
@@ -112,50 +135,45 @@ Manual run example:
 ```bash
 export TARS_STACKCHAN_TOKEN="<local-token>"
 export TARS_STACKCHAN_UPLOAD_PORT=/dev/cu.usbmodem1101
-scripts/dev/upload-firmware.sh mod
+make firmware-mod
 ```
 
 For a full host firmware deploy plus MOD flash:
 
 ```bash
-TARS_STACKCHAN_DEPLOY_HOST=1 scripts/dev/upload-firmware.sh all
+TARS_STACKCHAN_DEPLOY_HOST=1 make firmware-all
 ```
 
 See [firmware/README.md](firmware/README.md) for firmware and TTS details, and [docs/hardware-smoke.md](docs/hardware-smoke.md) for the validated hardware smoke flow.
 
 ## Local Development
 
-Run the Go test suite:
+The root Makefile is the project command index:
 
 ```bash
-cd mcp-server
-go test ./...
+make help
 ```
 
-List tools with the mock bridge:
+Common verification and build targets:
 
 ```bash
-printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
-  | go run ./cmd/tars-stackchan-mcp
+make test
+make lint
+make build
 ```
 
-Run against real firmware:
+List MCP tools with the mock bridge:
 
 ```bash
-TARS_STACKCHAN_BRIDGE=http \
-TARS_STACKCHAN_BASE_URL=http://stackchan.local \
-TARS_STACKCHAN_TOKEN="$TARS_STACKCHAN_TOKEN" \
-go run ./cmd/tars-stackchan-mcp
+make mcp-tools-list
 ```
 
-Expose the optional firmware upload tool locally:
+Run the MCP server locally:
 
 ```bash
-TARS_STACKCHAN_ENABLE_FIRMWARE_TOOLS=1 \
-TARS_STACKCHAN_BRIDGE=http \
-TARS_STACKCHAN_BASE_URL=http://stackchan.local \
-TARS_STACKCHAN_TOKEN="$TARS_STACKCHAN_TOKEN" \
-go run ./cmd/tars-stackchan-mcp
+make run-mcp
+TARS_STACKCHAN_BASE_URL=http://stackchan.local make run-mcp-http
+TARS_STACKCHAN_BASE_URL=http://stackchan.local make run-mcp-firmware
 ```
 
 The shared firmware protocol is documented in [docs/protocol/local-control-api.md](docs/protocol/local-control-api.md).
@@ -165,10 +183,9 @@ The shared firmware protocol is documented in [docs/protocol/local-control-api.m
 Run the browser-based control panel before connecting an AI client:
 
 ```bash
-cd mcp-server
 TARS_STACKCHAN_BASE_URL=http://stackchan.local \
 TARS_STACKCHAN_TOKEN="$TARS_STACKCHAN_TOKEN" \
-go run ./cmd/tars-stackchan-control
+make run-control
 ```
 
 Open `http://127.0.0.1:8787`. The console exposes status, expression, head, LED, motion, speech text, and speech volume through the same bridge contract as the MCP server.
@@ -195,14 +212,14 @@ observation to TARS (the brain). Run order:
 
 ```bash
 # 1. (optional) fingerprint the owner so the bot tells owner from stranger
-tars-stackchan-control perceive enroll --name me
+make perceive-enroll OWNER_NAME=me
 
 # 2. run the loop (audio-only on real CoreS3 until Spike S is fixed)
-TARS_STACKCHAN_BRIDGE=http TARS_STACKCHAN_BASE_URL=http://<device-ip> \
+TARS_STACKCHAN_BASE_URL=http://<device-ip> \
 TARS_STACKCHAN_PERCEIVE_CAMERA=off \
 TARS_STACKCHAN_TARS_BASE_URL=http://127.0.0.1:43180 \
 TARS_STACKCHAN_TARS_WEBHOOK_CHANNEL=stackchan \
-tars-stackchan-control perceive serve
+make perceive-serve
 ```
 
 Architecture (role split): tars-stackchan is the body (sensors + actuation),
@@ -217,13 +234,13 @@ TARS is the brain (LLM + memory + persona). See `docs/plans/embodied-bot-roadmap
 For UI-only development without hardware:
 
 ```bash
-TARS_STACKCHAN_BRIDGE=mock go run ./cmd/tars-stackchan-control
+make run-control-mock
 ```
 
 Override the listen address with `TARS_STACKCHAN_CONTROL_ADDR`, for example:
 
 ```bash
-TARS_STACKCHAN_CONTROL_ADDR=127.0.0.1:8790 go run ./cmd/tars-stackchan-control
+TARS_STACKCHAN_CONTROL_ADDR=127.0.0.1:8790 make run-control
 ```
 
 ## Speech
@@ -240,9 +257,9 @@ session (a plain `export` is not enough for the service):
 launchctl setenv GEMINI_API_KEY "<google-ai-studio-api-key>"
 launchctl setenv TARS_STACKCHAN_TOKEN "<local-token>"
 brew services restart tars-stackchan
-tars-stackchan-control tts status   # relay + mDNS health
+make tts-status                     # relay + mDNS health
 
-# dev alternative (foreground, reads shell env): tars-stackchan-control tts serve
+# dev alternative (foreground, reads shell env): make tts-serve
 ```
 
 `launchctl setenv` does not survive a reboot; run those two lines from a

@@ -1,7 +1,13 @@
 {
-  "include": ["$(MODDABLE)/examples/manifest_mod.json"],
+  "include": [
+    "$(MODDABLE)/examples/manifest_mod.json"
+  ],
   "modules": {
-    "*": ["./mod", "./bridge-core", "./perception"],
+    "*": [
+      "./mod",
+      "./bridge-core",
+      "./perception"
+    ],
     "tars-http-server-service": "./http-server-service",
     "tars-listen": "./listen"
   },
@@ -12,6 +18,7 @@
       "device": "stackchan-k151",
       "firmware": "tars-stackchan-dev",
       "ledName": "head",
+      "mdnsHostName": "stackchan",
       "speechPathPrefix": "/api/tts?text="
     }
   }

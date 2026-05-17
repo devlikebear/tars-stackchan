@@ -31,6 +31,12 @@ jobs:
         working-directory: mcp-server
         run: go test ./...
 
+      - name: Test Makefile contract
+        run: scripts/test/makefile-contract.sh
+
+      - name: Test base URL discovery contract
+        run: scripts/test/discover-base-url-contract.sh
+
       - name: Test firmware bridge contract
         run: scripts/test/firmware-bridge-contract.sh
 

@@ -27,6 +27,8 @@ assert_file "$release_workflow"
 assert_file "$goreleaser_config"
 
 assert_contains "$ci_workflow" "go test ./..."
+assert_contains "$ci_workflow" "scripts/test/makefile-contract.sh"
+assert_contains "$ci_workflow" "scripts/test/discover-base-url-contract.sh"
 assert_contains "$ci_workflow" "scripts/test/firmware-upload-script-contract.sh"
 assert_contains "$ci_workflow" "scripts/test/release-config-contract.sh"
 

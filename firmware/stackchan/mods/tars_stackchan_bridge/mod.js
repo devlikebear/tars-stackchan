@@ -1,4 +1,5 @@
 import config from 'mod/config'
+import MDNS from 'mdns'
 import Net from 'net'
 import { HttpServerService } from 'tars-http-server-service'
 
@@ -22,9 +23,11 @@ const TOKEN = bridgeConfig.token ?? ''
 const DEVICE = bridgeConfig.device ?? 'stackchan-k151'
 const FIRMWARE = bridgeConfig.firmware ?? 'tars-stackchan-dev'
 const LED_NAME = bridgeConfig.ledName ?? 'head'
+const MDNS_HOST_NAME = bridgeConfig.mdnsHostName ?? 'stackchan'
 const SPEECH_PATH_PREFIX = bridgeConfig.speechPathPrefix ?? ''
 const PORT = bridgeConfig.port ?? 80
 let server
+let mdns
 
 const FORWARD = Object.freeze({ y: 0, p: 0, r: 0 })
 const MOTION_STEPS = Object.freeze({
@@ -53,6 +56,7 @@ function onLaunch() {
 
 function onRobotCreated(robot) {
   server = new HttpServerService({ port: PORT })
+  startMDNS()
 
   server.get('/v1/status', (c) =>
     c.json({
@@ -141,7 +145,43 @@ function onRobotCreated(robot) {
     return c.json(actionResponse('speak', { text: request.text, volume: request.volume }))
   }))
 
-  trace(`[tars-stackchan] local control API listening${PORT ? ` on port ${PORT}` : ''}\n`)
+  const ip = getIP()
+  if (ip) {
+    trace(`[tars-stackchan] local control API listening at http://${ip}${PORT && PORT !== 80 ? `:${PORT}` : ''}\n`)
+  } else {
+    trace(`[tars-stackchan] local control API listening${PORT ? ` on port ${PORT}` : ''}\n`)
+  }
+}
+
+function startMDNS() {
+  const service = {
+    name: 'http',
+    protocol: 'tcp',
+    port: PORT,
+    txt: {
+      device: DEVICE,
+      firmware: FIRMWARE,
+      api: 'tars-stackchan-v1',
+    },
+  }
+
+  mdns = new MDNS({ hostName: MDNS_HOST_NAME }, function (message, value) {
+    switch (message) {
+      case MDNS.hostName:
+        if (value) {
+          const mdnsHostName = value
+          mdns.add(service)
+          trace(`[tars-stackchan] mDNS advertised http://${mdnsHostName}.local${PORT && PORT !== 80 ? `:${PORT}` : ''}\n`)
+        }
+        break
+      case MDNS.retry:
+        trace(`[tars-stackchan] mDNS hostname "${value}" is busy, retrying\n`)
+        break
+      default:
+        if (message < 0) trace('[tars-stackchan] mDNS hostname claim failed\n')
+        break
+    }
+  })
 }
 
 function withAuth(handler) {
