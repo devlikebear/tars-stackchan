@@ -69,6 +69,12 @@ tars-stackchan을 "출력 전용 브리지"에서 **감각 엣지 + 액추에이
 > 루프 무크래시 동작(owner 음성식별 포함). **카메라/비전만 블록**, 오디오
 > closed-loop는 실HW 가용(TARS 배선만 추가하면 됨).
 >
+> **Spike S2 해결(2026-05-17).** 웹 리서치로 확인한 공식 M5Stack StackChan/
+> Espressif BSP 경로에 맞춰 CoreS3 카메라 host overlay를 `esp_video` + V4L2
+> DVP binding으로 교체했다. 기존 `embedded:io/image/in/camera` JS API는 유지.
+> CoreS3 host+MOD를 USB 플래시했고, `/v1/camera/snapshot?max_width=320`은
+> HTTP 200 JPEG 320x240, `/v1/audio/clip?ms=500`은 HTTP 200 WAV로 실HW 통과.
+>
 > **Phase 1 마감 — 부분 통과 + 분리된 OPEN DEFECT.**
 > 퍼셉션 transport/프로토콜/Go·MOD 구현/테스트/계약/호스트통합 = 완료·실HW 검증.
 > 실 CoreS3 camera(추정상 audio) 캡처는 디바이스 리셋 — Moddable 비공식 보드의
@@ -79,8 +85,8 @@ tars-stackchan을 "출력 전용 브리지"에서 **감각 엣지 + 액추에이
 
 | Phase | 산출물 | 끝나면 동작하는 것 |
 |---|---|---|
-| **1. 펌웨어 퍼셉션 캡처** | `/v1/camera/snapshot`·`/v1/audio/clip`·`/v1/sensors` 프로토콜+MOD+Go 브리지+mock+테스트, CoreS3 호스트 카메라/오디오 모듈 통합 | ✅ status/sensors/auth/호스트통합 실HW 검증. ❌ 실 카메라 캡처는 디바이스 리셋(스파이크 S로 분리) |
-| **S. CoreS3 카메라 네이티브 브링업 (스파이크, 분리)** | esp32-camera↔GC0308 on CoreS3 원인규명·수정 (AW9523 카메라 리셋/enable, LEDC 충돌, GC0308 클럭/DMA 후보) | 실 디바이스에서 `/v1/camera/snapshot`→JPEG, `/v1/audio/clip`→WAV 안정 동작 |
+| **1. 펌웨어 퍼셉션 캡처** | `/v1/camera/snapshot`·`/v1/audio/clip`·`/v1/sensors` 프로토콜+MOD+Go 브리지+mock+테스트, CoreS3 호스트 카메라/오디오 모듈 통합 | ✅ status/sensors/auth/호스트통합 실HW 검증. ✅ 카메라 320x240 JPEG, 오디오 16 kHz WAV 실HW 검증 |
+| **S. CoreS3 카메라 네이티브 브링업 (스파이크, 분리)** | 공식 StackChan/ESP-BSP와 같은 `esp_video`+V4L2 DVP binding, GC0308 320x240 RGB565_BE sdkconfig, shared I2C handle 주입 | 실 디바이스에서 `/v1/camera/snapshot`→JPEG, `/v1/audio/clip`→WAV 안정 동작 |
 | **2. 퍼셉션 루프 + TARS 감각 채널** | 이벤트+주기 캡처 루프, 관측→TARS webhook POST, TARS 페르소나 반응 | 봇 앞에서 움직이면 TARS가 보고 말/표정으로 반응 (owner 식별 없는 "누군가 있다") |
 | **3. Owner 지문화 + 식별** | owner enroll CLI, 얼굴/음성 임베딩 매칭, 관측에 owner/stranger/unknown 라벨 | 봇이 주인과 타인을 구분해 다르게 반응 |
 | **4. REST 정비 + 메모리/페르소나 안정화 + 릴리스** | REST 표면 정비, 메모리 축적 검증, doctor 확장, 문서/릴리스 | 외부(claude code/tars)에서 REST로 음성·감정·피드백 제어, 봇이 경험을 기억 |

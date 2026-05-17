@@ -1,21 +1,9 @@
 /*
- * Copyright (c) 2024-2025  Moddable Tech, Inc.
+ * CoreS3 camera host overlay for TARS Stack-chan.
  *
- *   This file is part of the Moddable SDK Runtime.
- * 
- *   The Moddable SDK Runtime is free software: you can redistribute it and/or modify
- *   it under the terms of the GNU Lesser General Public License as published by
- *   the Free Software Foundation, either version 3 of the License, or
- *   (at your option) any later version.
- * 
- *   The Moddable SDK Runtime is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU Lesser General Public License for more details.
- * 
- *   You should have received a copy of the GNU Lesser General Public License
- *   along with the Moddable SDK Runtime.  If not, see <http://www.gnu.org/licenses/>.
- *
+ * This keeps Moddable's ECMA-419 Camera JavaScript API but replaces the
+ * legacy camera driver path with the official CoreS3/ESP-BSP style path:
+ * existing shared I2C handle -> esp_video DVP init -> V4L2 frame dequeue.
  */
 
 #include "xsmc.h"
@@ -24,35 +12,40 @@
 #include "xsHost.h"
 
 #include "builtinCommon.h"
-#include "_i2c.h"
 
-#include "esp_camera.h"
-#include "sensor.h"
-
-// TARS Stack-chan (Embodied Bot, Spike S fix): on M5Stack CoreS3 the camera
-// SCCB is wired onto the SAME internal I2C bus (GPIO12 SDA / GPIO11 SCL)
-// that the Moddable i2c_master driver already owns (AXP2101 / AW9523 /
-// touch / audio codecs). Two owners on the shared pins hard-reset the
-// device. The official M5Unified CoreS3 camera example handles this by
-// calling M5.In_I2C.release() *before* esp_camera_init. tarsReleaseSharedI2C
-// mirrors that hand-off using public IDF API only (no Moddable _i2c.c
-// change). NOTE: after the hand-off, host-side Moddable I2C peripherals
-// (touch buttons, battery gauge) are not re-bound — acceptable for the
-// perception-driven Embodied Bot: servo is UART, LED/face/TTS are
-// unaffected, and the microphone is I2S (independent of this bus).
 #include "driver/i2c_master.h"
+#include "esp_err.h"
+#include "esp_log.h"
+#include "esp_video_device.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "img_converters.h"
+#include "soc/gpio_num.h"
 
-static void tarsReleaseSharedI2C(void)
-{
-	for (int port = 0; port < 2; port++) {		// ESP32-S3 has 2 I2C ports
-		i2c_master_bus_handle_t bus = NULL;
-		if ((ESP_OK == i2c_master_get_bus_handle(port, &bus)) && (NULL != bus))
-			i2c_del_master_bus(bus);
-	}
-}
+#include <errno.h>
+#include <fcntl.h>
+#include <inttypes.h>
+#include <linux/videodev2.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
-#include "commodettoBitmapFormat.h"
-#include "commodettoPocoBlit.h"
+#if !CONFIG_ESP_VIDEO_ENABLE_DVP_VIDEO_DEVICE
+	#error "CoreS3 camera overlay requires CONFIG_ESP_VIDEO_ENABLE_DVP_VIDEO_DEVICE"
+#endif
+#if CONFIG_ESP_VIDEO_ENABLE_MIPI_CSI_VIDEO_DEVICE || CONFIG_ESP_VIDEO_ENABLE_SPI_VIDEO_DEVICE || CONFIG_ESP_VIDEO_ENABLE_USB_UVC_VIDEO_DEVICE || CONFIG_ESP_VIDEO_ENABLE_HW_JPEG_VIDEO_DEVICE || CONFIG_ESP_VIDEO_ENABLE_HW_H264_VIDEO_DEVICE || CONFIG_ESP_VIDEO_ENABLE_ISP_VIDEO_DEVICE
+	#error "CoreS3 camera overlay assumes esp_video DVP-only layout"
+#endif
+
+#ifndef MAP_FAILED
+	#define MAP_FAILED ((void *)-1)
+#endif
 
 #ifndef MODDEF_CAMERA_POWERDOWN
 	#define MODDEF_CAMERA_POWERDOWN -1
@@ -60,19 +53,166 @@ static void tarsReleaseSharedI2C(void)
 #ifndef MODDEF_CAMERA_RESET
 	#define MODDEF_CAMERA_RESET -1
 #endif
+#ifndef MODDEF_CAMERA_XCLK
+	#define MODDEF_CAMERA_XCLK -1
+#endif
+#ifndef MODDEF_CAMERA_PCLK
+	#define MODDEF_CAMERA_PCLK 45
+#endif
+#ifndef MODDEF_CAMERA_HREF
+	#define MODDEF_CAMERA_HREF 38
+#endif
+#ifndef MODDEF_CAMERA_VSYNC
+	#define MODDEF_CAMERA_VSYNC 46
+#endif
+#ifndef MODDEF_CAMERA_SDA
+	#define MODDEF_CAMERA_SDA 12
+#endif
+#ifndef MODDEF_CAMERA_SCL
+	#define MODDEF_CAMERA_SCL 11
+#endif
 #ifndef MODDEF_CAMERA_I2C_PORT
-	#if CONFIG_SCCB_HARDWARE_I2C_PORT1
-		#define MODDEF_CAMERA_I2C_PORT	1
-	#else
-		#define MODDEF_CAMERA_I2C_PORT	0
-	#endif
+	#define MODDEF_CAMERA_I2C_PORT 1
+#endif
+#ifndef MODDEF_CAMERA_D0
+	#define MODDEF_CAMERA_D0 39
+#endif
+#ifndef MODDEF_CAMERA_D1
+	#define MODDEF_CAMERA_D1 40
+#endif
+#ifndef MODDEF_CAMERA_D2
+	#define MODDEF_CAMERA_D2 41
+#endif
+#ifndef MODDEF_CAMERA_D3
+	#define MODDEF_CAMERA_D3 42
+#endif
+#ifndef MODDEF_CAMERA_D4
+	#define MODDEF_CAMERA_D4 15
+#endif
+#ifndef MODDEF_CAMERA_D5
+	#define MODDEF_CAMERA_D5 16
+#endif
+#ifndef MODDEF_CAMERA_D6
+	#define MODDEF_CAMERA_D6 48
+#endif
+#ifndef MODDEF_CAMERA_D7
+	#define MODDEF_CAMERA_D7 47
 #endif
 #ifndef MODDEF_CAMERA_XCLK_FREQ_HZ
-	#define MODDEF_CAMERA_XCLK_FREQ_HZ (24000000)
+	#define MODDEF_CAMERA_XCLK_FREQ_HZ 20000000
 #endif
 #ifndef MODDEF_CAMERA_JPEG_QUALITY
-	#define MODDEF_CAMERA_JPEG_QUALITY (12)
+	#define MODDEF_CAMERA_JPEG_QUALITY 12
 #endif
+
+#define kCameraBufferCount 1
+#define kCameraCaptureTries 3
+#define kCameraDQBUFTimeoutMs 3000
+
+// Moddable native modules are compiled by the SDK's host makefile, not CMake,
+// so ESP-IDF transitive include directories from esp_video are not visible
+// here. Keep a DVP-only mirror of the public esp_video init ABI; sdkconfig
+// assertions above make the layout explicit and fail fast if it drifts.
+#define ESP_VIDEO_INIT_FLAGS_DVP (1 << 1)
+#define ESP_CAM_CTLR_DVP_DATA_SIG_NUM 16
+
+typedef int cam_ctlr_data_width_t;
+
+enum {
+	CAM_CTLR_DATA_WIDTH_8 = 8
+};
+
+typedef struct esp_cam_ctlr_dvp_pin_config {
+	cam_ctlr_data_width_t data_width;
+	gpio_num_t data_io[ESP_CAM_CTLR_DVP_DATA_SIG_NUM];
+	gpio_num_t vsync_io;
+	gpio_num_t de_io;
+	gpio_num_t pclk_io;
+	gpio_num_t xclk_io;
+} esp_cam_ctlr_dvp_pin_config_t;
+
+typedef struct esp_video_init_sccb_config {
+	bool init_sccb;
+	union {
+		struct {
+			uint8_t port;
+			gpio_num_t scl_pin;
+			gpio_num_t sda_pin;
+		} i2c_config;
+		i2c_master_bus_handle_t i2c_handle;
+	};
+	uint32_t freq;
+} esp_video_init_sccb_config_t;
+
+typedef struct esp_video_init_dvp_config {
+	esp_video_init_sccb_config_t sccb_config;
+	gpio_num_t reset_pin;
+	gpio_num_t pwdn_pin;
+	esp_cam_ctlr_dvp_pin_config_t dvp_pin;
+	uint32_t xclk_freq;
+} esp_video_init_dvp_config_t;
+
+typedef struct esp_video_init_config {
+	const esp_video_init_dvp_config_t *dvp;
+} esp_video_init_config_t;
+
+esp_err_t esp_video_init_with_flags(const esp_video_init_config_t *config, uint32_t flags);
+esp_err_t esp_video_deinit_with_flags(uint32_t flags);
+
+static const char *TAG = "tars-camera";
+
+typedef struct CameraVideoBufferRecord {
+	void	*start;
+	size_t	length;
+} CameraVideoBufferRecord;
+
+typedef struct CameraFrameRecord {
+	uint8_t	*data;
+	size_t	dataLength;
+	xsSlot	*hostBuffer;
+	uint8_t	state;
+} CameraFrameRecord;
+
+enum {
+	kFrameFree = 0,
+	kFrameReady,
+	kFrameClient
+};
+
+typedef struct CameraRecord CameraRecord;
+typedef struct CameraRecord *Camera;
+
+struct CameraRecord {
+	xsMachine	*the;
+	xsSlot		object;
+	xsSlot		*onReadable;
+	xsSlot		*hostBufferPrototype;
+
+	uint8_t		format;
+	uint8_t		isJPEG;
+	uint8_t		calling;
+	uint8_t		closing;
+	int			imageType;
+
+	uint16_t	width;
+	uint16_t	height;
+	uint8_t		jpegQuality;
+
+	i2c_master_bus_handle_t i2cBus;
+	bool		ownsI2C;
+	bool		videoInitialized;
+	bool		streaming;
+	int			videoFd;
+	uint32_t	pixelFormat;
+
+	uint8_t		videoBufferCount;
+	CameraVideoBufferRecord buffers[kCameraBufferCount];
+	CameraFrameRecord frame;
+
+	const char	*lastErrorStep;
+	esp_err_t	lastError;
+	int			lastErrno;
+};
 
 static void xs_camera_mark(xsMachine *the, void *it, xsMarkRoot markRoot);
 void xs_camera_destructor(void *data);
@@ -83,300 +223,413 @@ static const xsHostHooks ICACHE_RODATA_ATTR xsCameraHooks = {
 	NULL
 };
 
-enum CameraFrameState {
-	kCameraStateFree = 0,
-	kCameraStatePreparing,
-	kCameraStateReady,
-	kCameraStateClient,
-};
-typedef enum CameraFrameState CameraFrameState;
-
-struct CameraFrameRecord {
-	void					*data;
-	uint32_t				dataLength;
-	xsSlot					*hostBuffer;
-	camera_fb_t				*fb;
-	uint32_t				id;
-	CameraFrameState		state;
-};
-typedef struct CameraFrameRecord CameraFrameRecord;
-typedef struct CameraFrameRecord *CameraFrame;
-
-#define kCameraFrameCount (3)
-
-struct CameraRecord {
-	xsMachine	*the;
-	xsSlot		object;
-	xsSlot		*onReadable;
-
-	uint32_t	width;
-	uint32_t	height;
-
-	SemaphoreHandle_t	mutex;
-	TaskHandle_t		task;
-	uint8_t				state;
-	uint8_t				calling;
-
-	uint8_t		swap16;
-	uint8_t		format;
-	uint8_t		isJPEG;
-	esp_err_t	initErr;
-	int			imageType;
-
-	xsSlot		*hostBufferPrototype;
-
-	uint32_t	frameID;
-	CameraFrameRecord	frames[kCameraFrameCount];
-
-	uint8_t				sensorInitialized;
-	camera_status_t		sensorHas;		// 0 if not supported; 1 otherwise
-};
-typedef struct CameraRecord CameraRecord;
-typedef struct CameraRecord *Camera;
-
-struct FramesizeRecord {
-	uint8_t		id;
-	uint16_t	width;
-	uint16_t	height;
-};
-typedef struct FramesizeRecord FramesizeRecord;
-typedef struct FramesizeRecord *Framesize;
-
-// ordered by width, then by height
-static FramesizeRecord FrameSizes[] = {
-    FRAMESIZE_96X96,   96, 96,
-    FRAMESIZE_128X128, 128, 128,
-    FRAMESIZE_QQVGA,   160, 120,
-    FRAMESIZE_QCIF,    176, 144,
-    FRAMESIZE_HQVGA,   240, 176,
-    FRAMESIZE_240X240, 240, 240,
-    FRAMESIZE_QVGA,    320, 240,
-    FRAMESIZE_320X320, 320, 320,
-    FRAMESIZE_CIF,     400, 296,
-    FRAMESIZE_HVGA,    480, 320,
-    FRAMESIZE_VGA,     640, 480,
-    FRAMESIZE_P_HD,    720, 1280,
-    FRAMESIZE_SVGA,    800, 600,
-    FRAMESIZE_P_3MP,   864, 1536,
-    FRAMESIZE_XGA,     1024, 768,
-    FRAMESIZE_P_FHD,   1080, 1920,
-    FRAMESIZE_HD,      1280, 720,
-    FRAMESIZE_SXGA,    1280, 1024,
-    FRAMESIZE_UXGA,    1600, 1200,
-    FRAMESIZE_FHD,     1920, 1080,
-    FRAMESIZE_QXGA,    2048, 1536,
-    FRAMESIZE_QHD,     2560, 1440,
-    FRAMESIZE_WQXGA,   2560, 1600,
-    FRAMESIZE_QSXGA,   2560, 1920,
-    FRAMESIZE_INVALID, 0, 0
-};
-
-static camera_config_t camera_config = {
-	.pin_pwdn = MODDEF_CAMERA_POWERDOWN,
-	.pin_reset = MODDEF_CAMERA_RESET,
-	.pin_xclk = MODDEF_CAMERA_XCLK,
-	.pin_sccb_sda = MODDEF_CAMERA_SDA,
-	.pin_sccb_scl = MODDEF_CAMERA_SCL,
-
-	.pin_d0 = MODDEF_CAMERA_D0,
-	.pin_d1 = MODDEF_CAMERA_D1,
-	.pin_d2 = MODDEF_CAMERA_D2,
-	.pin_d3 = MODDEF_CAMERA_D3,
-	.pin_d4 = MODDEF_CAMERA_D4,
-	.pin_d5 = MODDEF_CAMERA_D5,
-	.pin_d6 = MODDEF_CAMERA_D6,
-	.pin_d7 = MODDEF_CAMERA_D7,
-	.pin_vsync = MODDEF_CAMERA_VSYNC,
-	.pin_href = MODDEF_CAMERA_HREF,
-	.pin_pclk = MODDEF_CAMERA_PCLK,
-
-	.xclk_freq_hz = MODDEF_CAMERA_XCLK_FREQ_HZ,
-	.ledc_timer = LEDC_TIMER_0,
-	.ledc_channel = LEDC_CHANNEL_0,
-
-	.pixel_format = PIXFORMAT_RGB565,
-	.frame_size = FRAMESIZE_VGA,
-
-	.jpeg_quality = MODDEF_CAMERA_JPEG_QUALITY,
-	.fb_count = 3,
-	.fb_location = CAMERA_FB_IN_PSRAM,
-	.grab_mode = CAMERA_GRAB_LATEST,		// vs. CAMERA_GRAB_WHEN_EMPTY
-	.sccb_i2c_port = MODDEF_CAMERA_I2C_PORT
-};
-
-enum {
-	kStateInitializing,
-	kStateIdle,
-	kStateRunning,
-	kStateStopping,
-	kStateClosing,
-	kStateTerminated
-};
-
-static void deliverCallbacks(void *the, void *refcon, uint8_t *message, uint16_t messageLength)
+static esp_err_t cameraGetI2C(Camera camera)
 {
-	Camera camera = refcon;
+	esp_err_t err;
 
-	if (kStateTerminated == camera->state) {
-		xs_camera_destructor(camera);		//@@??
-		return;
-	}
+	err = i2c_master_get_bus_handle(I2C_NUM_0, &camera->i2cBus);
+	if ((ESP_OK == err) && camera->i2cBus)
+		return ESP_OK;
 
-	if (kStateRunning != camera->state)
-		return;
+	err = i2c_master_get_bus_handle(I2C_NUM_1, &camera->i2cBus);
+	if ((ESP_OK == err) && camera->i2cBus)
+		return ESP_OK;
 
-	xsBeginHost(the);
-		xsCallFunction1(xsReference(camera->onReadable), camera->object, xsInteger(0));
-	xsEndHost(the);
-	camera->calling = 0;
+	i2c_master_bus_config_t busConfig = {
+		.i2c_port = MODDEF_CAMERA_I2C_PORT,
+		.sda_io_num = (gpio_num_t)MODDEF_CAMERA_SDA,
+		.scl_io_num = (gpio_num_t)MODDEF_CAMERA_SCL,
+		.clk_source = I2C_CLK_SRC_DEFAULT,
+		.glitch_ignore_cnt = 7,
+		.flags.enable_internal_pullup = true,
+	};
+
+	err = i2c_new_master_bus(&busConfig, &camera->i2cBus);
+	if (ESP_OK == err)
+		camera->ownsI2C = true;
+
+	return err;
 }
 
-static void cameraLoop(void *pvParameter)
+static esp_err_t cameraSetError(Camera camera, const char *step, esp_err_t err, int errNo)
 {
-	Camera camera = pvParameter;
-	uint8_t running = 0;
+	camera->lastErrorStep = step;
+	camera->lastError = err;
+	camera->lastErrno = errNo;
+	return err;
+}
 
-	tarsReleaseSharedI2C();		// Spike S: hand the shared I2C bus off before camera SCCB init
-	camera->initErr = esp_camera_init(&camera_config);
-	if (ESP_OK != camera->initErr) {
-		xSemaphoreTake(camera->mutex, portMAX_DELAY);
-		goto bail;
+static esp_err_t cameraSetErrno(Camera camera, const char *step)
+{
+	return cameraSetError(camera, step, ESP_FAIL, errno);
+}
+
+static int cameraFormatRank(uint32_t pixelFormat)
+{
+	switch (pixelFormat) {
+		case V4L2_PIX_FMT_JPEG:
+			return 0;
+		case V4L2_PIX_FMT_RGB565:
+			return 1;
+#ifdef V4L2_PIX_FMT_RGB565X
+		case V4L2_PIX_FMT_RGB565X:
+			return 2;
+#endif
+		case V4L2_PIX_FMT_YUYV:
+		case V4L2_PIX_FMT_YUV422P:
+			return 3;
+		case V4L2_PIX_FMT_RGB24:
+			return 4;
+		case V4L2_PIX_FMT_GREY:
+			return 5;
+		default:
+			return 1000;
 	}
+}
 
-	while (true) {
-		if (kStateClosing == camera->state) {
-			xSemaphoreTake(camera->mutex, portMAX_DELAY);
+static bool image_to_jpeg(uint8_t *src, size_t srcLen, uint16_t width, uint16_t height, uint32_t v4l2Format, uint8_t quality, uint8_t **out, size_t *outLen)
+{
+	pixformat_t format;
+
+	*out = NULL;
+	*outLen = 0;
+
+	switch (v4l2Format) {
+		case V4L2_PIX_FMT_JPEG:
+			*out = malloc(srcLen);
+			if (!*out)
+				return false;
+			memcpy(*out, src, srcLen);
+			*outLen = srcLen;
+			return true;
+
+		case V4L2_PIX_FMT_RGB565:
+#ifdef V4L2_PIX_FMT_RGB565X
+		case V4L2_PIX_FMT_RGB565X:
+#endif
+			jpgSetRgb565BE(true);
+			format = PIXFORMAT_RGB565;
 			break;
-		}
 
-		if (kStateStopping == camera->state) {
-			running = 0;
-			camera->state = kStateIdle;
-		}
+		case V4L2_PIX_FMT_YUYV:
+		case V4L2_PIX_FMT_YUV422P:
+			// esp_video reports GC0308 YUV422P as packed YUYV on ESP32-S3.
+			format = PIXFORMAT_YUV422;
+			break;
 
-		if (running || (kStateInitializing == camera->state)) {
-			camera_fb_t *fb = esp_camera_fb_get();
-			CameraFrame frame = NULL;
-			int i;
+		case V4L2_PIX_FMT_RGB24:
+			format = PIXFORMAT_RGB888;
+			break;
 
-			if (!camera->width) {
-				camera->state = kStateIdle;	// was kStateInitializing
-				camera->width = fb->width;
-				camera->height = fb->height;
-			}
+		case V4L2_PIX_FMT_GREY:
+			format = PIXFORMAT_GRAYSCALE;
+			break;
 
-			xSemaphoreTake(camera->mutex, portMAX_DELAY);
-
-			for (i = 0; i < kCameraFrameCount; i++) {
-				if (kCameraStateFree == camera->frames[i].state) {
-					frame = &camera->frames[i];
-					frame->id = ++camera->frameID;
-					frame->state = kCameraStatePreparing;
-					break;
-				}
-			}
-
-			xSemaphoreGive(camera->mutex);
-			if (!frame) {
-				esp_camera_fb_return(fb);
-				continue;		// keep capturing so that we always have a current frame
-			}
-
-			if (camera->swap16) {
-				uint32_t *pixels = (uint32_t*)fb->buf;
-				const uint32_t mask = 0x00ff00ff;
-				uint32_t i, count = fb->len >> 2;
-				for (i = 0; i < count; i++) {
-					uint32_t t = pixels[i];
-					pixels[i] = ((t & mask) << 8) | ((t >> 8) & mask);
-				}
-			}
-			else if (kCommodettoBitmapGray16 == camera->imageType) {	// convert RGB565BE to Gray16
-				uint32_t *src = (uint32_t*)fb->buf;
-				uint8_t *dst = (uint8_t*)fb->buf;
-				uint32_t i, count = fb->len >> 2;
-				const uint32_t mask = 0x00ff00ff;
-				for (i = 0; i < count; i++) {
-					uint32_t t = *src++;
-					t = ((t & mask) << 8) | ((t >> 8) & mask);
-					uint8_t a = PocoMakePixelGray16((((t >> 27) & 0x1f) << 3), (((t >> 21) & 0x3f) << 2), (((t >> 16) & 0x1f) >> 3));
-					uint8_t b = PocoMakePixelGray16((((t >> 11) & 0x1f) << 3), (((t >> 5) & 0x3f) << 2), (((t >> 0) & 0x1f) >> 3));
-					*dst++ = (b << 4) | a; 
-				}
-			}
-
-			frame->fb = fb;
-			frame->data = fb->buf;
-			frame->dataLength = fb->len;
-			frame->state = kCameraStateReady;
-
-			if (camera->onReadable) {
-				camera->calling = 1;
-				modMessagePostToMachine(camera->the, C_NULL, 0, deliverCallbacks, camera);
-			}
-		}
-
-		if (kStateIdle == camera->state || !running) {
-			uint32_t newState;
-			xTaskNotifyWait(0, 0, &newState, portMAX_DELAY);
-
-			if (kStateRunning == newState)
-				running = 1;
-			camera->state = newState;
-		}
+		default:
+			ESP_LOGE(TAG, "unsupported V4L2 pixel format: 0x%08" PRIx32, v4l2Format);
+			return false;
 	}
 
-bail:
-	esp_camera_deinit();
-
-	camera->task = NULL;
-	xSemaphoreGive(camera->mutex);
-	camera->state = kStateTerminated;
-	vTaskDelete(NULL);
+	return fmt2jpg(src, srcLen, width, height, format, quality, out, outLen);
 }
 
-static int formatToCamFormat(int commodettoFormat)
+static void cameraFreeFrame(Camera camera, bool detachHostBuffer)
 {
-	switch (commodettoFormat) {
-		case kCommodettoBitmapRGB565BE:
-		case kCommodettoBitmapRGB565LE: return PIXFORMAT_RGB565; 		// 2BPP/RGB565
-		case kCommodettoBitmapMonochrome: return PIXFORMAT_GRAYSCALE;	// 1BPP/GRAYSCALE
-		case kCommodettoBitmapJPEG: return PIXFORMAT_JPEG;				// JPEG/COMPRESSED
-		case kCommodettoBitmap24RGB: return PIXFORMAT_RGB888;			// 3BPP/RGB888
-		case kCommodettoBitmapRGB444: return PIXFORMAT_RGB444;			// 3BP2P/RGB444
-		case kCommodettoBitmapYUV422: return PIXFORMAT_YUV422;			// 2BPP/YUV422
-		case kCommodettoBitmapGray16: return PIXFORMAT_RGB565;			// 4BPP/GRAYSCAPE (post process) (in a perfec world, we would select YUV422 when available)
-		// PIXFORMAT_YUV420;    // 1.5BPP/YUV420
-		// PIXFORMAT_RAW;       // RAW	(?)
-		// PIXFORMAT_RGB555;    // 3BP2P/RGB555
+	CameraFrameRecord *frame = &camera->frame;
+
+	if (detachHostBuffer && frame->hostBuffer) {
+		xsMachine *the = camera->the;
+		xsSlot tmp = xsReference(frame->hostBuffer);
+		xsmcSetHostBuffer(tmp, NULL, 0);
 	}
+
+	if (frame->data)
+		free(frame->data);
+
+	frame->data = NULL;
+	frame->dataLength = 0;
+	frame->hostBuffer = NULL;
+	frame->state = kFrameFree;
+}
+
+static esp_err_t cameraConfigureVideo(Camera camera)
+{
+	esp_err_t err;
+
+	err = cameraGetI2C(camera);
+	if (ESP_OK != err) {
+		ESP_LOGE(TAG, "I2C bus unavailable: %s", esp_err_to_name(err));
+		return cameraSetError(camera, "cameraGetI2C", err, 0);
+	}
+
+	esp_cam_ctlr_dvp_pin_config_t dvpPins = {
+		.data_width = CAM_CTLR_DATA_WIDTH_8,
+		.data_io = {
+			(gpio_num_t)MODDEF_CAMERA_D0,
+			(gpio_num_t)MODDEF_CAMERA_D1,
+			(gpio_num_t)MODDEF_CAMERA_D2,
+			(gpio_num_t)MODDEF_CAMERA_D3,
+			(gpio_num_t)MODDEF_CAMERA_D4,
+			(gpio_num_t)MODDEF_CAMERA_D5,
+			(gpio_num_t)MODDEF_CAMERA_D6,
+			(gpio_num_t)MODDEF_CAMERA_D7,
+			GPIO_NUM_NC,
+			GPIO_NUM_NC,
+			GPIO_NUM_NC,
+			GPIO_NUM_NC,
+			GPIO_NUM_NC,
+			GPIO_NUM_NC,
+			GPIO_NUM_NC,
+			GPIO_NUM_NC,
+		},
+		.vsync_io = (gpio_num_t)MODDEF_CAMERA_VSYNC,
+		.de_io = (gpio_num_t)MODDEF_CAMERA_HREF,
+		.pclk_io = (gpio_num_t)MODDEF_CAMERA_PCLK,
+		.xclk_io = (gpio_num_t)MODDEF_CAMERA_XCLK,
+	};
+
+	esp_video_init_sccb_config_t sccbConfig = {
+		.init_sccb = false,
+		.i2c_handle = camera->i2cBus,
+		.freq = 100000,
+	};
+
+	esp_video_init_dvp_config_t dvpConfig = {
+		.sccb_config = sccbConfig,
+		.reset_pin = (gpio_num_t)MODDEF_CAMERA_RESET,
+		.pwdn_pin = (gpio_num_t)MODDEF_CAMERA_POWERDOWN,
+		.dvp_pin = dvpPins,
+		.xclk_freq = MODDEF_CAMERA_XCLK_FREQ_HZ,
+	};
+
+	esp_video_init_config_t videoConfig = {
+		.dvp = &dvpConfig,
+	};
+
+	err = esp_video_init_with_flags(&videoConfig, ESP_VIDEO_INIT_FLAGS_DVP);
+	if (ESP_OK != err) {
+		ESP_LOGE(TAG, "esp_video_init failed: %s", esp_err_to_name(err));
+		return cameraSetError(camera, "esp_video_init_with_flags", err, 0);
+	}
+	camera->videoInitialized = true;
+
+	camera->videoFd = open(ESP_VIDEO_DVP_DEVICE_NAME, O_RDWR | O_NONBLOCK);
+	if (camera->videoFd < 0) {
+		ESP_LOGE(TAG, "open %s failed: errno=%d", ESP_VIDEO_DVP_DEVICE_NAME, errno);
+		return cameraSetErrno(camera, "open DVP device");
+	}
+
+	struct v4l2_capability capability = {0};
+	if (ioctl(camera->videoFd, VIDIOC_QUERYCAP, &capability) != 0) {
+		ESP_LOGE(TAG, "VIDIOC_QUERYCAP failed: errno=%d", errno);
+		return cameraSetErrno(camera, "VIDIOC_QUERYCAP");
+	}
+
+	struct v4l2_format format = {0};
+	format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	if (ioctl(camera->videoFd, VIDIOC_G_FMT, &format) != 0) {
+		ESP_LOGE(TAG, "VIDIOC_G_FMT failed: errno=%d", errno);
+		return cameraSetErrno(camera, "VIDIOC_G_FMT");
+	}
+	struct v4l2_format currentFormat = format;
+
+	struct v4l2_fmtdesc desc = {0};
+	uint32_t bestFormat = 0;
+	int bestRank = 1000;
+	desc.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	while (ioctl(camera->videoFd, VIDIOC_ENUM_FMT, &desc) == 0) {
+		int rank = cameraFormatRank(desc.pixelformat);
+		if (rank < bestRank) {
+			bestRank = rank;
+			bestFormat = desc.pixelformat;
+		}
+		desc.index++;
+	}
+	if (!bestFormat)
+		bestFormat = format.fmt.pix.pixelformat;
+	if (cameraFormatRank(bestFormat) >= 1000) {
+		ESP_LOGE(TAG, "no supported V4L2 pixel format found");
+		return cameraSetError(camera, "select V4L2 pixel format", ESP_FAIL, 0);
+	}
+
+	format.fmt.pix.width = camera->width;
+	format.fmt.pix.height = camera->height;
+	format.fmt.pix.pixelformat = bestFormat;
+	if (ioctl(camera->videoFd, VIDIOC_S_FMT, &format) != 0) {
+		int setErrno = errno;
+		ESP_LOGE(TAG, "VIDIOC_S_FMT failed: errno=%d; falling back to current V4L2 format", setErrno);
+		if (cameraFormatRank(currentFormat.fmt.pix.pixelformat) >= 1000)
+			return cameraSetError(camera, "fallback V4L2 pixel format", ESP_FAIL, setErrno);
+		format = currentFormat;
+	}
+
+	camera->width = (uint16_t)format.fmt.pix.width;
+	camera->height = (uint16_t)format.fmt.pix.height;
+	camera->pixelFormat = format.fmt.pix.pixelformat;
+
+	struct v4l2_requestbuffers req = {0};
+	req.count = kCameraBufferCount;
+	req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	req.memory = V4L2_MEMORY_MMAP;
+	if (ioctl(camera->videoFd, VIDIOC_REQBUFS, &req) != 0) {
+		ESP_LOGE(TAG, "VIDIOC_REQBUFS failed: errno=%d", errno);
+		return cameraSetErrno(camera, "VIDIOC_REQBUFS");
+	}
+	if (req.count > kCameraBufferCount)
+		req.count = kCameraBufferCount;
+	camera->videoBufferCount = req.count;
+
+	for (uint32_t i = 0; i < req.count; i++) {
+		struct v4l2_buffer buffer = {0};
+		buffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+		buffer.memory = V4L2_MEMORY_MMAP;
+		buffer.index = i;
+		if (ioctl(camera->videoFd, VIDIOC_QUERYBUF, &buffer) != 0) {
+			ESP_LOGE(TAG, "VIDIOC_QUERYBUF failed: errno=%d", errno);
+			return cameraSetErrno(camera, "VIDIOC_QUERYBUF");
+		}
+
+		void *start = mmap(NULL, buffer.length, PROT_READ | PROT_WRITE, MAP_SHARED, camera->videoFd, buffer.m.offset);
+		if ((MAP_FAILED == start) || (NULL == start)) {
+			ESP_LOGE(TAG, "mmap failed: errno=%d", errno);
+			return cameraSetErrno(camera, "mmap V4L2 buffer");
+		}
+
+		camera->buffers[i].start = start;
+		camera->buffers[i].length = buffer.length;
+
+		if (ioctl(camera->videoFd, VIDIOC_QBUF, &buffer) != 0) {
+			ESP_LOGE(TAG, "VIDIOC_QBUF failed: errno=%d", errno);
+			return cameraSetErrno(camera, "VIDIOC_QBUF");
+		}
+	}
+
+	int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	if (ioctl(camera->videoFd, VIDIOC_STREAMON, &type) != 0) {
+		ESP_LOGE(TAG, "VIDIOC_STREAMON failed: errno=%d", errno);
+		return cameraSetErrno(camera, "VIDIOC_STREAMON");
+	}
+	camera->streaming = true;
+
+	ESP_LOGI(TAG, "CoreS3 camera ready: %ux%u fourcc=0x%08" PRIx32, camera->width, camera->height, camera->pixelFormat);
+	return ESP_OK;
+}
+
+static int cameraDequeueBuffer(Camera camera, struct v4l2_buffer *buffer)
+{
+	uint32_t waited = 0;
+
+	while (waited <= kCameraDQBUFTimeoutMs) {
+		if (ioctl(camera->videoFd, VIDIOC_DQBUF, buffer) == 0)
+			return 0;
+
+		if ((EAGAIN != errno) && (EWOULDBLOCK != errno)) {
+			ESP_LOGE(TAG, "VIDIOC_DQBUF failed: errno=%d", errno);
+			return -1;
+		}
+
+		vTaskDelay(pdMS_TO_TICKS(10));
+		waited += 10;
+	}
+
+	ESP_LOGE(TAG, "VIDIOC_DQBUF timed out after %ums", (unsigned)kCameraDQBUFTimeoutMs);
+	errno = ETIMEDOUT;
 	return -1;
 }
 
-static int dimensionsToFrameSize(int width, int height)
+static void cameraTeardownVideo(Camera camera)
 {
-	int i;
-	for (i = 0; FRAMESIZE_INVALID != FrameSizes[i].id; i++) {
-		if (FrameSizes[i].width < width)
-			continue;
-		if (FrameSizes[i].height < height) {
-			if ((FRAMESIZE_INVALID != FrameSizes[i + 1].id) && (FrameSizes[i+1].width == FrameSizes[i].width))
-				return i + 1;
-		}
-		return i;
+	if (camera->streaming && (camera->videoFd >= 0)) {
+		int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+		ioctl(camera->videoFd, VIDIOC_STREAMOFF, &type);
+		camera->streaming = false;
 	}
-	return -1;
+
+	for (uint8_t i = 0; i < camera->videoBufferCount; i++) {
+		if (camera->buffers[i].start && camera->buffers[i].length) {
+			munmap(camera->buffers[i].start, camera->buffers[i].length);
+			camera->buffers[i].start = NULL;
+			camera->buffers[i].length = 0;
+		}
+	}
+	camera->videoBufferCount = 0;
+
+	if (camera->videoFd >= 0) {
+		close(camera->videoFd);
+		camera->videoFd = -1;
+	}
+
+	if (camera->videoInitialized) {
+		esp_video_deinit_with_flags(ESP_VIDEO_INIT_FLAGS_DVP);
+		camera->videoInitialized = false;
+	}
+
+	if (camera->ownsI2C && camera->i2cBus) {
+		i2c_del_master_bus(camera->i2cBus);
+		camera->i2cBus = NULL;
+		camera->ownsI2C = false;
+	}
 }
 
+static esp_err_t cameraCaptureFrame(Camera camera)
+{
+	uint8_t *jpeg = NULL;
+	size_t jpegLength = 0;
+	esp_err_t result = ESP_FAIL;
+
+	cameraFreeFrame(camera, true);
+
+	for (int attempt = 0; attempt < kCameraCaptureTries; attempt++) {
+		struct v4l2_buffer buffer = {0};
+		buffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+		buffer.memory = V4L2_MEMORY_MMAP;
+		if (cameraDequeueBuffer(camera, &buffer) != 0)
+			return ESP_FAIL;
+
+		bool useFrame = (attempt == (kCameraCaptureTries - 1));
+		if (useFrame) {
+			if (buffer.index >= camera->videoBufferCount) {
+				ESP_LOGE(TAG, "invalid V4L2 buffer index: %lu", (unsigned long)buffer.index);
+			}
+			else {
+				size_t bytesUsed = buffer.bytesused ? buffer.bytesused : camera->buffers[buffer.index].length;
+				if (image_to_jpeg((uint8_t *)camera->buffers[buffer.index].start, bytesUsed, camera->width, camera->height, camera->pixelFormat, camera->jpegQuality, &jpeg, &jpegLength)) {
+					camera->frame.data = jpeg;
+					camera->frame.dataLength = jpegLength;
+					camera->frame.state = kFrameReady;
+					result = ESP_OK;
+				}
+				else
+					ESP_LOGE(TAG, "image_to_jpeg failed");
+			}
+		}
+
+		if (ioctl(camera->videoFd, VIDIOC_QBUF, &buffer) != 0) {
+			ESP_LOGE(TAG, "VIDIOC_QBUF failed: errno=%d", errno);
+			if (jpeg) {
+				free(jpeg);
+				camera->frame.data = NULL;
+				camera->frame.dataLength = 0;
+				camera->frame.state = kFrameFree;
+			}
+			return ESP_FAIL;
+		}
+
+		if (ESP_OK == result)
+			return ESP_OK;
+	}
+
+	return result;
+}
 
 void xs_camera_constructor(xsMachine *the)
 {
-	uint32_t width = 240;
-	uint32_t height = 176;
+	uint32_t width = 320;
+	uint32_t height = 240;
 	uint8_t format = kIOFormatBuffer;
 	Camera camera;
-	int imageType = kCommodettoBitmapRGB565LE;
-	uint8_t isJPEG = 0;
+	int imageType = -1;
+	uint8_t isJPEG = 1;
 
 	xsmcVars(1);
 
@@ -394,134 +647,90 @@ void xs_camera_constructor(xsMachine *the)
 	}
 	if (xsmcHas(xsArg(0), xsID_imageType)) {
 		xsmcGet(xsVar(0), xsArg(0), xsID_imageType);
-		if (xsStringType == xsmcTypeOf(xsVar(0))) {
-			if (c_strcmp("jpeg", xsmcToString(xsVar(0))))
-				xsRangeError("unknown imageType");
-			isJPEG = 1;
-			imageType = -1;
-		}
-		else
-			imageType = xsmcToInteger(xsVar(0));
+		if ((xsStringType != xsmcTypeOf(xsVar(0))) || c_strcmp("jpeg", xsmcToString(xsVar(0))))
+			xsRangeError("CoreS3 camera overlay supports imageType: 'jpeg'");
 	}
 
 	camera = c_calloc(1, sizeof(CameraRecord));
 	if (!camera)
 		xsUnknownError("not enough memory");
-	xsmcSetHostData(xsThis, camera);
-	xsSetHostHooks(xsThis, (xsHostHooks *)&xsCameraHooks);
-
+	camera->videoFd = -1;
 	camera->the = the;
 	camera->object = xsThis;
 	camera->format = format;
+	camera->imageType = imageType;
+	camera->isJPEG = isJPEG;
+	camera->width = (uint16_t)width;
+	camera->height = (uint16_t)height;
+	camera->jpegQuality = MODDEF_CAMERA_JPEG_QUALITY;
+
+	xsmcSetHostData(xsThis, camera);
+	xsSetHostHooks(xsThis, (xsHostHooks *)&xsCameraHooks);
 	xsRemember(camera->object);
+
 	camera->onReadable = builtinGetCallback(the, xsID_onReadable);
 	builtinInitializeTarget(the);
 
 	xsmcGet(xsVar(0), xsArg(0), xsID_prototype);
 	camera->hostBufferPrototype = xsmcToReference(xsVar(0));
-	int frameSizeIndex = dimensionsToFrameSize(width, height);
-	if (-1 == frameSizeIndex)
-		xsUnknownError("unsupported dimensions");
 
-	camera_config.frame_size = FrameSizes[frameSizeIndex].id;
-
-	camera->state = kStateInitializing;
-	camera->mutex = xSemaphoreCreateMutex();
-
-	if (isJPEG)
-		camera_config.pixel_format = PIXFORMAT_JPEG;
-	else {
-		camera_config.pixel_format = formatToCamFormat(imageType);
-		if (-1 == camera_config.pixel_format)
-			xsUnknownError("unsupported pixel format");
+	esp_err_t err = cameraConfigureVideo(camera);
+	if (ESP_OK != err) {
+		char message[160];
+		const char *step = camera->lastErrorStep ? camera->lastErrorStep : "cameraConfigureVideo";
+		snprintf(message, sizeof(message), "camera init failed at %s: %s errno=%d", step, esp_err_to_name(err), camera->lastErrno);
+		xsmcSetHostData(xsThis, NULL);
+		xsmcSetHostDestructor(xsThis, NULL);
+		xsForget(camera->object);
+		xs_camera_destructor(camera);
+		xsUnknownError(message);
 	}
-	camera->imageType = imageType;
-	camera->swap16 = (imageType == kCommodettoBitmapRGB565LE);
-	camera->isJPEG = isJPEG;
-
-	xTaskCreate(cameraLoop, "camera", 8 * 1024 + XT_STACK_EXTRA_CLIB, camera, 10, &camera->task);
-	
-	while (kStateInitializing == camera->state)
-		vTaskDelay(1);
-
-	if (camera->initErr)
-		xsUnknownError("camera init failed");
 }
 
 void xs_camera_destructor(void *it)
 {
-	if (it) {
-		Camera camera = it;
+	if (!it)
+		return;
 
-		if (camera->task) {
-			xTaskNotify(camera->task, kStateClosing, eSetValueWithOverwrite);
-			while (kStateTerminated != camera->state)
-				modDelayMilliseconds(1);
-
-			vSemaphoreDelete(camera->mutex);
-		}
-
-		c_free(camera);
-	}
+	Camera camera = it;
+	cameraFreeFrame(camera, false);
+	cameraTeardownVideo(camera);
+	c_free(camera);
 }
 
 void xs_camera_close(xsMachine *the)
 {
 	Camera camera = xsmcGetHostData(xsThis);
 	if ((camera) && xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks)) {
-	//@@ detach host buffers
-	//@@ free frameBuffers
-
 		xsmcSetHostData(xsThis, NULL);
 		xsmcSetHostDestructor(xsThis, NULL);
 		xsForget(camera->object);
 		if (camera->calling)
-			camera->calling = 0;
+			camera->closing = 1;
 		else
 			xs_camera_destructor(camera);
 	}
 }
 
-void xs_camera_mark(xsMachine *the, void *it, xsMarkRoot markRoot)
+static void xs_camera_mark(xsMachine *the, void *it, xsMarkRoot markRoot)
 {
 	Camera camera = it;
 
 	if (camera->onReadable)
 		(*markRoot)(the, camera->onReadable);
-
 	if (camera->hostBufferPrototype)
 		(*markRoot)(the, camera->hostBufferPrototype);
-
-	int i;
-	for (i = 0; i < kCameraFrameCount; i++) {
-		if (camera->frames[i].hostBuffer)
-			(*markRoot)(the, camera->frames[i].hostBuffer);
-	}
+	if (camera->frame.hostBuffer)
+		(*markRoot)(the, camera->frame.hostBuffer);
 }
 
 void xs_camera_read(xsMachine *the)
 {
 	Camera camera = xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
-	void *buffer;
-	uint8_t bufferNumber = 0;
-	int i;
-	CameraFrame frame = NULL;
+	CameraFrameRecord *frame = &camera->frame;
 
-	xSemaphoreTake(camera->mutex, portMAX_DELAY);
-
-	for (i = 0; i < kCameraFrameCount; i++) {
-		if (kCameraStateReady != camera->frames[i].state)
-			continue;
-		if (NULL == frame)
-			frame = &camera->frames[i];
-		else if (frame->id > camera->frames[i].id)
-			frame = &camera->frames[i];		// take the earliest frame in the queue
-	}
-
-	if (NULL == frame) {
-		xSemaphoreGive(camera->mutex);
+	if (kFrameReady != frame->state)
 		return;
-	}
 
 	if (kIOFormatBufferDisposable == camera->format) {
 		xsSlot tmp;
@@ -535,7 +744,7 @@ void xs_camera_read(xsMachine *the)
 		xsmcPetrifyHostBuffer(xsResult);
 
 		frame->hostBuffer = xsmcToReference(xsResult);
-		frame->state = kCameraStateClient;
+		frame->state = kFrameClient;
 	}
 	else {
 		if ((xsmcArgc > 0) && (xsReferenceType == xsmcTypeOf(xsArg(0)))) {
@@ -543,70 +752,49 @@ void xs_camera_read(xsMachine *the)
 			xsUnsignedValue requested;
 
 			xsmcGetBufferWritable(xsArg(0), &dst, &requested);
-			if (requested < frame->dataLength) {
-				xSemaphoreGive(camera->mutex);
+			if (requested < frame->dataLength)
 				xsRangeError("buffer too small");
-			}
-			xsmcSetInteger(xsResult, frame->dataLength);
-
 			memcpy(dst, frame->data, frame->dataLength);
+			xsmcSetInteger(xsResult, frame->dataLength);
 		}
-		else {
+		else
 			xsmcSetArrayBuffer(xsResult, frame->data, frame->dataLength);
-		}
 
-
-		esp_camera_fb_return(frame->fb);
-		frame->hostBuffer = NULL;
-		frame->fb = NULL;
-		frame->data = NULL;
-		frame->state = kCameraStateFree;
+		cameraFreeFrame(camera, false);
 	}
-
-	xSemaphoreGive(camera->mutex);
 }
 
 void xs_camera_start(xsMachine *the)
 {
-    Camera camera = xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
+	Camera camera = xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
 
-	xTaskNotify(camera->task, kStateRunning, eSetValueWithOverwrite);
+	if (ESP_OK != cameraCaptureFrame(camera))
+		xsUnknownError("camera capture failed");
+
+	if (camera->onReadable) {
+		camera->calling = 1;
+		xsCallFunction0(xsReference(camera->onReadable), camera->object);
+		camera->calling = 0;
+		if (camera->closing)
+			xs_camera_destructor(camera);
+	}
 }
 
 void xs_camera_stop(xsMachine *the)
 {
-    Camera camera = xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
-	xTaskNotify(camera->task, kStateStopping, eSetValueWithOverwrite);
-
-	xSemaphoreTake(camera->mutex, portMAX_DELAY);
-
-	int i;
-	for (i = 0; i < kCameraFrameCount; i++) {
-		if (camera->frames[i].data) {
-			if (camera->frames[i].hostBuffer) {
-				xsSlot tmp = xsReference(camera->frames[i].hostBuffer);
-				xsmcSetHostBuffer(tmp, NULL, 0);		// detach
-			}
-			if (camera->frames[i].fb)
-				esp_camera_fb_return(camera->frames[i].fb);
-			camera->frames[i].fb = NULL;
-			camera->frames[i].data = NULL;
-		}
-		camera->frames[i].state = kCameraStateFree;
-	}
-
-	xSemaphoreGive(camera->mutex);
+	Camera camera = xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
+	cameraFreeFrame(camera, true);
 }
 
 void xs_camera_get_format(xsMachine *the)
 {
-    Camera camera = xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
+	Camera camera = xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
 	builtinGetFormat(the, camera->format);
 }
 
 void xs_camera_set_format(xsMachine *the)
 {
-    Camera camera = xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
+	Camera camera = xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
 	uint8_t format = builtinSetFormat(the);
 	if ((kIOFormatBuffer != format) && (kIOFormatBufferDisposable != format))
 		xsRangeError("invalid format");
@@ -615,125 +803,45 @@ void xs_camera_set_format(xsMachine *the)
 
 void xs_camera_get_imageType(xsMachine *the)
 {
-    Camera camera = xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
-    if (camera->isJPEG)
+	Camera camera = xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
+	if (camera->isJPEG)
 		xsmcSetStringX(xsResult, "jpeg");
-   else
+	else
 		xsmcSetInteger(xsResult, camera->imageType);
 }
 
 void xs_camera_get_width(xsMachine *the)
 {
-    Camera camera = xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
+	Camera camera = xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
 	xsmcSetInteger(xsResult, camera->width);
 }
 
 void xs_camera_get_height(xsMachine *the)
 {
-    Camera camera = xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
+	Camera camera = xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
 	xsmcSetInteger(xsResult, camera->height);
 }
 
 void xs_camera_get_identification(xsMachine *the)
 {
-    Camera camera = xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
-	camera_sensor_info_t *info = esp_camera_sensor_get_info(&esp_camera_sensor_get()->id);
+	(void)xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
 
 	xsmcVars(1);
 	xsmcSetNewObject(xsResult);
-	xsmcSetString(xsVar(0), (char *)info->name);
+	xsmcSetString(xsVar(0), "M5Stack CoreS3 GC0308 (esp_video)");
 	xsmcSet(xsResult, xsID_model, xsVar(0));
-}
-
-static void ensureSensor(Camera camera)
-{
-	if (camera->sensorInitialized)
-		return;
-
-	sensor_t *sensor = esp_camera_sensor_get();
-
-	camera->sensorHas.brightness = 0 == sensor->set_brightness(sensor, sensor->status.brightness);
-	camera->sensorHas.contrast = 0 == sensor->set_contrast(sensor, sensor->status.contrast);
-	camera->sensorHas.saturation = 0 == sensor->set_saturation(sensor, sensor->status.saturation);
-	camera->sensorHas.sharpness = 0 == sensor->set_sharpness(sensor, sensor->status.sharpness);
-	camera->sensorHas.denoise = 0 == sensor->set_denoise(sensor, sensor->status.denoise);
-	camera->sensorHas.wb_mode = 0 == sensor->set_whitebal(sensor, sensor->status.wb_mode);
-
-	camera->sensorInitialized = true;
 }
 
 void xs_camera_get_configuration(xsMachine *the)
 {
-    Camera camera = xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
-	ensureSensor(camera);
-
-	sensor_t *sensor = esp_camera_sensor_get();
-	xsSlot tmp;
-
+	(void)xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
 	xsmcSetNewObject(xsResult);
-	if (camera->sensorHas.brightness) {
-		xsmcSetInteger(tmp, sensor->status.brightness);
-		xsmcSet(xsResult, xsID_brightness, tmp);
-	}
-	if (camera->sensorHas.contrast) {
-		xsmcSetInteger(tmp, sensor->status.contrast);
-		xsmcSet(xsResult, xsID_conrast, tmp);
-	}
-	if (camera->sensorHas.saturation) {
-		xsmcSetInteger(tmp, sensor->status.saturation);
-		xsmcSet(xsResult, xsID_saturation, tmp);
-	}
-	if (camera->sensorHas.sharpness) {
-		xsmcSetInteger(tmp, sensor->status.sharpness);
-		xsmcSet(xsResult, xsID_sharpness, tmp);
-	}
-	if (camera->sensorHas.denoise) {
-		xsmcSetInteger(tmp, sensor->status.denoise);
-		xsmcSet(xsResult, xsID_denoise, tmp);
-	}
-	if (camera->sensorHas.wb_mode) {
-		xsmcSetInteger(tmp, sensor->status.wb_mode);
-		xsmcSet(xsResult, xsID_whiteBalance, tmp);
-	}
 }
 
 void xs_camera_configure(xsMachine *the)
 {
-    Camera camera = xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
-	ensureSensor(camera);
-
-	sensor_t *sensor = esp_camera_sensor_get();
-	xsSlot tmp;
-
-	if (camera->sensorHas.brightness && xsmcHas(xsArg(0), xsID_brightness)) {
-		xsmcGet(tmp, xsArg(0), xsID_brightness);
-		sensor->set_brightness(sensor, xsmcToInteger(tmp));
-	}
-	if (camera->sensorHas.contrast && xsmcHas(xsArg(0), xsID_contrast)) {
-		xsmcGet(tmp, xsArg(0), xsID_contrast);
-		sensor->set_contrast(sensor, xsmcToInteger(tmp));
-	}
-	if (camera->sensorHas.saturation && xsmcHas(xsArg(0), xsID_saturation)) {
-		xsmcGet(tmp, xsArg(0), xsID_saturation);
-		sensor->set_saturation(sensor, xsmcToInteger(tmp));
-	}
-	if (camera->sensorHas.sharpness && xsmcHas(xsArg(0), xsID_sharpness)) {
-		xsmcGet(tmp, xsArg(0), xsID_sharpness);
-		sensor->set_sharpness(sensor, xsmcToInteger(tmp));
-	}
-	if (camera->sensorHas.denoise && xsmcHas(xsArg(0), xsID_denoise)) {
-		xsmcGet(tmp, xsArg(0), xsID_denoise);
-		sensor->set_denoise(sensor, xsmcToInteger(tmp));
-	}
-	if (camera->sensorHas.wb_mode && xsmcHas(xsArg(0), xsID_whiteBalance)) {
-		xsmcGet(tmp, xsArg(0), xsID_whiteBalance);
-		sensor->set_wb_mode(sensor, xsmcToInteger(tmp));
-	}
+	(void)xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
 }
-
-/*
-	Disposable HostBuffer
-*/
 
 void _xs_disposable_hostbuffer_destructor(void *data)
 {
@@ -748,24 +856,13 @@ void _xs_disposable_hostbuffer_close(xsMachine *the)
 	xsmcVars(1);
 
 	xsmcGet(xsVar(0), xsThis, xsID_camera);
-    Camera camera = xsmcGetHostDataValidate(xsVar(0), (void *)&xsCameraHooks);
+	Camera camera = xsmcGetHostDataValidate(xsVar(0), (void *)&xsCameraHooks);
+	CameraFrameRecord *frame = &camera->frame;
 
-	xSemaphoreTake(camera->mutex, portMAX_DELAY);
+	if (frame->data != buffer)
+		xsUnknownError("unknown buffer");
 
-	int i;
-	for (i = 0; i < kCameraFrameCount; i++) {
-		if (camera->frames[i].data == buffer) {
-			esp_camera_fb_return(camera->frames[i].fb);
-			camera->frames[i].state = kCameraStateFree;
-			camera->frames[i].fb = NULL;
-			camera->frames[i].data = NULL;
-			camera->frames[i].hostBuffer = NULL;
-			xSemaphoreGive(camera->mutex);
-			xsmcSetHostBuffer(xsThis, NULL, 0);
-			return;
-		}
-	}
-
-	xSemaphoreGive(camera->mutex);
-	xsUnknownError("unknown buffer");
+	xsmcSetHostBuffer(xsThis, NULL, 0);
+	frame->hostBuffer = NULL;
+	cameraFreeFrame(camera, false);
 }
