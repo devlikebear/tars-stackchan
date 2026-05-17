@@ -10,8 +10,8 @@ tars-stackchan = 몸(감각 엣지+액추에이터), TARS = 뇌(역할분리 hyb
 **오디오 퍼셉션·owner 음성식별·REST·임베디먼트·TARS 스킬/계약 = 완료(오디오는
 실HW 검증).** 카메라/비전 = `esp_video` S2 host overlay로 실HW 검증 완료.
 기존 Moddable `esp32-camera` 경로는 2회 실패했고, 공식 StackChan/ESP-BSP가 쓰는
-`esp_video`/V4L2 경로로 교체함. TARS 자율 closed-loop = 스킬/MCP/계약 정합,
-자율소비는 TARS 코어 갭.
+`esp_video`/V4L2 경로로 교체함. TARS 자율 closed-loop = TARS Phase 1-3
+PR 경로에서 self-sensory Percept 수집·cognition·BodyAction 라우팅까지 연결됨.
 
 ## 페이즈별 상태
 
@@ -22,7 +22,7 @@ tars-stackchan = 몸(감각 엣지+액추에이터), TARS = 뇌(역할분리 hyb
 | 3 owner 식별 | 완료(mock) | `perceive enroll`, `identify`(owner/stranger/unknown 융합), 0600/0700. 음성식별 실HW 가용 |
 | 4 REST+릴리스 | 완료(mock) | `/api/emotion`·`/api/perceive/status`, doctor 퍼셉션 진단, README |
 | S 카메라 네이티브 브링업 | 해결됨 | Moddable `esp32-camera` 경로 수정 2회 실패 후 공식 StackChan/ESP-BSP `esp_video` V4L2 경로로 교체. 실 CoreS3 플래시/스모크 통과 |
-| TARS 측 배선 | 핸드오프 완료 | `../tars` 스킬 v0.3.0 + INTEGRATION.md. 자율소비는 TARS 코어 갭 |
+| TARS 측 배선 | PR 경로 구현 | `../tars` Phase 1-3 PR: provider-neutral Percept/BodyAction, embodiment gate/cognition, MCP action routing. tars-stackchan Phase 4가 Stack-chan provider adapter와 payload 계약을 맞춤 |
 
 ## 동작하는 것 (실HW/검증)
 
@@ -136,14 +136,17 @@ tars-stackchan = 몸(감각 엣지+액추에이터), TARS = 뇌(역할분리 hyb
   포맷 외 조합을 `EINVAL`로 거부한다. overlay는 실패 시 `VIDIOC_G_FMT`의 현재
   포맷으로 폴백해 320x240 JPEG 캡처를 안정화했다.
 
-### 2) TARS 자율 closed-loop (tars repo에서 재개)
-- 현재: 관측은 `POST /v1/channels/webhook/inbound/stackchan`로 전송됨. TARS는
-  이를 **영속 인박스로 저장+콘솔 노출**할 뿐 자동 에이전트 턴 없음.
-- 재개(TARS repo): 스케줄/펄스 훅 또는 채널바인딩 에이전트가 inbound webhook을
-  소비해 `tars-stackchan` 스킬로 세션 턴을 돌리는 코어 기능 추가. 스킬/MCP/
-  페르소나/계약은 이미 정합(`../tars/workspace/skills/tars-stackchan/`).
-  단 그 경로는 tars의 gitignore `workspace/`(런타임) — 영구 기여는 tars의
-  추적 스킬 소스에 반영 + tars repo PR 필요.
+### 2) TARS 자율 closed-loop (TARS Phase 1-3 PR 경로)
+- 현재 구현 경로: 관측은 기존
+  `POST /v1/channels/webhook/inbound/stackchan` 또는 전용
+  `/v1/embodiment/percept/{provider}`로 들어오고, payload의 `x-embodiment`,
+  `owner`, `modality`, `media_ref`를 TARS의 provider-neutral Percept로 정규화한다.
+- TARS Phase 1-3 PR은 self-sensory Percept를 채널 인박스에 저장한 뒤
+  embodiment gate/cognition으로 넘긴다. owner 음성/지시성 관측은 session-bound
+  autonomous turn을 만들고, 응답의 `tars-body-action` 블록은 provider capability에
+  맞을 때만 `speak`/`express`/`move`/`led` 액션으로 되돌아간다.
+- tars-stackchan Phase 4는 위 경로에 맞춰 Stack-chan MCP provider adapter,
+  `bodyprovider` 계약, capability 선언, legacy webhook 호환 payload를 제공한다.
 - **아키텍처 결정 (2026-05-17)**: TARS 공용 로직을 신규 프로젝트용 pkg로
   export하는 안은 **기각**. `tool` 패키지가 internal 전반에 결합돼 22k LOC가
   영구 공개 API + `config` 전염이 되고, 이미 `pkg/tarsclient`+스킬/계약 기반
@@ -160,8 +163,10 @@ tars-stackchan = 몸(감각 엣지+액추에이터), TARS = 뇌(역할분리 hyb
   `firmware/stackchan/host-overlay/imagein-camera-cores3` (S2 `esp_video` overlay).
   다음 작업은 이 카메라/오디오 실HW 캡처를 perception loop의 실제 비전 입력으로
   켜서 owner 얼굴/시선 인식 루프로 연결하는 것.
-- **tars 측**: `../tars/workspace/skills/tars-stackchan/SKILL.md`(v0.3.0,
-  Perception inbound 섹션) + `INTEGRATION.md`(설정/계약/갭). 자율소비 갭부터.
+- **tars 측**: Phase 1-3 PR의 `internal/embodiment`, `/v1/embodiment/percept/*`,
+  기존 inbound webhook의 embodiment autodetect, MCP action transport를 확인한다.
+  설정 예시는 `config/tars.config.example.yaml`의 `embodiment.providers`와 이 repo의
+  `mcp-server/examples/tars/tars.config.yaml`을 함께 본다.
 - 메모리(에이전트): `embodied-bot-architecture`, `cores3-camera-capture-blocked`,
   `firmware-camera-first-build`, `tars-side-wiring`.
 

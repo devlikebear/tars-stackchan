@@ -4,7 +4,7 @@ import (
 	"context"
 	"slices"
 
-	"github.com/devlikebear/tars-stackchan/mcp-server/internal/stackchan"
+	"github.com/devlikebear/tars-stackchan/mcp-server/internal/bodyprovider"
 )
 
 // Identity labels.
@@ -24,7 +24,7 @@ type Identity struct {
 // Identifier scores a captured moment against the enrolled owner. Abstracted
 // so the mock/offline path is deterministic and Gemini is opt-in.
 type Identifier interface {
-	Identify(ctx context.Context, snap stackchan.CameraSnapshot, clip stackchan.AudioClip) (Identity, error)
+	Identify(ctx context.Context, snap bodyprovider.CameraSnapshot, clip bodyprovider.AudioClip) (Identity, error)
 }
 
 // modalityScore is a per-modality "same person as owner" probability.
@@ -87,7 +87,7 @@ type StubIdentifier struct {
 	Config  Config
 }
 
-func (s StubIdentifier) Identify(_ context.Context, snap stackchan.CameraSnapshot, clip stackchan.AudioClip) (Identity, error) {
+func (s StubIdentifier) Identify(_ context.Context, snap bodyprovider.CameraSnapshot, clip bodyprovider.AudioClip) (Identity, error) {
 	if !s.Profile.Enrolled() {
 		return Identity{Label: LabelUnknown, Confidence: 0, Modality: "none"}, nil
 	}

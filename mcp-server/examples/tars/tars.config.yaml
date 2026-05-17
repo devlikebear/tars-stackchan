@@ -7,3 +7,22 @@ mcp:
         TARS_STACKCHAN_BRIDGE: http
         TARS_STACKCHAN_BASE_URL: http://stackchan.local
         TARS_STACKCHAN_TOKEN: replace-with-local-token
+
+embodiment:
+  enabled: true
+  providers:
+    - name: stackchan
+      enabled: true
+      transport: mcp
+      endpoint: tars-stackchan
+      capabilities:
+        - vision
+        - hearing
+        - speech
+        - expression
+        - motion
+        - led
+      session_id: sess_main
+      owner_only_directive: true
+      min_trigger_interval: 30s
+      max_triggers_per_hour: 60

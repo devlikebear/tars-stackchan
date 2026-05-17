@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/devlikebear/tars-stackchan/mcp-server/internal/stackchan"
+	"github.com/devlikebear/tars-stackchan/mcp-server/internal/bodyprovider"
 )
 
 // Observation is the compact, privacy-conscious record that leaves the
@@ -33,14 +33,14 @@ type Observation struct {
 // Summarizer turns a captured moment into a short natural-language summary
 // and a salience score. Abstracted so tests/offline use a deterministic stub.
 type Summarizer interface {
-	Summarize(ctx context.Context, snap stackchan.CameraSnapshot, clip stackchan.AudioClip, trigger string) (summary string, salience float64, err error)
+	Summarize(ctx context.Context, snap bodyprovider.CameraSnapshot, clip bodyprovider.AudioClip, trigger string) (summary string, salience float64, err error)
 }
 
 // StubSummarizer is deterministic and offline. Used when no Gemini key is
 // configured and in tests.
 type StubSummarizer struct{}
 
-func (StubSummarizer) Summarize(_ context.Context, snap stackchan.CameraSnapshot, clip stackchan.AudioClip, trigger string) (string, float64, error) {
+func (StubSummarizer) Summarize(_ context.Context, snap bodyprovider.CameraSnapshot, clip bodyprovider.AudioClip, trigger string) (string, float64, error) {
 	salience := 0.3
 	if trigger == "event" {
 		salience = 0.6
@@ -60,7 +60,7 @@ type GeminiSummarizer struct {
 	Client   *http.Client
 }
 
-func (g GeminiSummarizer) Summarize(ctx context.Context, snap stackchan.CameraSnapshot, clip stackchan.AudioClip, trigger string) (string, float64, error) {
+func (g GeminiSummarizer) Summarize(ctx context.Context, snap bodyprovider.CameraSnapshot, clip bodyprovider.AudioClip, trigger string) (string, float64, error) {
 	if strings.TrimSpace(g.APIKey) == "" {
 		return "", 0, errors.New("GEMINI_API_KEY or TARS_STACKCHAN_GEMINI_API_KEY is required")
 	}
@@ -168,7 +168,7 @@ func clamp01(f float64) float64 {
 // cacheMedia writes the raw snapshot/clip under cacheDir and returns relative
 // refs. Raw bytes never leave the device; only these refs travel in the
 // Observation. A write failure is non-fatal (ref left empty).
-func cacheMedia(cacheDir string, ts int64, snap stackchan.CameraSnapshot, clip stackchan.AudioClip) (imageRef, audioRef string) {
+func cacheMedia(cacheDir string, ts int64, snap bodyprovider.CameraSnapshot, clip bodyprovider.AudioClip) (imageRef, audioRef string) {
 	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
 		return "", ""
 	}

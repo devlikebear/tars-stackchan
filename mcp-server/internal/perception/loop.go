@@ -5,13 +5,13 @@ import (
 	"errors"
 	"time"
 
-	"github.com/devlikebear/tars-stackchan/mcp-server/internal/stackchan"
+	"github.com/devlikebear/tars-stackchan/mcp-server/internal/bodyprovider"
 )
 
 // Deps are the perception loop's collaborators. Bridge must implement the
 // optional PerceptionBridge capability (camera/audio/sensors).
 type Deps struct {
-	Bridge     stackchan.PerceptionBridge
+	Bridge     bodyprovider.PerceptionBridge
 	Summarizer Summarizer
 	Identifier Identifier
 	Sink       Sink
@@ -63,7 +63,7 @@ func (s *triggerState) record(now time.Time) {
 // decideTrigger is pure: given config, state, the latest sensor reading and
 // the current time, decide whether to capture and why. Event triggers beat
 // idle; both honor debounce and the hourly rate limit.
-func decideTrigger(cfg Config, st *triggerState, sensor stackchan.SensorState, now time.Time) (bool, string) {
+func decideTrigger(cfg Config, st *triggerState, sensor bodyprovider.SensorState, now time.Time) (bool, string) {
 	if st.rateLimited(now, cfg.MaxCapturesPerHour) {
 		return false, ""
 	}
@@ -96,15 +96,15 @@ func (d *Deps) step(ctx context.Context, st *triggerState) bool {
 	}
 	st.record(now)
 
-	var snap stackchan.CameraSnapshot
+	var snap bodyprovider.CameraSnapshot
 	if d.Config.CameraEnabled {
-		s, err := d.Bridge.CameraSnapshot(ctx, stackchan.SnapshotOptions{MaxWidth: d.Config.SnapshotMaxWidth})
+		s, err := d.Bridge.CameraSnapshot(ctx, bodyprovider.SnapshotOptions{MaxWidth: d.Config.SnapshotMaxWidth})
 		if err != nil {
 			d.logf("[perceive] camera snapshot failed: %v", err)
 		}
 		snap = s
 	}
-	clip, err := d.Bridge.AudioClip(ctx, stackchan.AudioOptions{DurationMs: d.Config.AudioClipMs})
+	clip, err := d.Bridge.AudioClip(ctx, bodyprovider.AudioOptions{DurationMs: d.Config.AudioClipMs})
 	if err != nil {
 		d.logf("[perceive] audio clip failed: %v", err)
 	}
