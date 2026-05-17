@@ -12,6 +12,7 @@ GORELEASER ?= goreleaser
 
 MCP_BIN := $(DIST_DIR)/tars-stackchan-mcp
 CONTROL_BIN := $(DIST_DIR)/tars-stackchan-control
+HOST_BIN := $(DIST_DIR)/tars-stackchan-host
 
 DEFAULT_STACKCHAN_BASE_URL := http://stackchan.local
 TARS_STACKCHAN_BASE_URL ?= $(DEFAULT_STACKCHAN_BASE_URL)
@@ -85,6 +86,7 @@ test-contracts: ## Run shell-level project contract tests
 	scripts/test/hardware-smoke-contract.sh
 	scripts/test/tts-relay-go-contract.sh
 	scripts/test/perception-loop-contract.sh
+	scripts/test/hostbody-smoke-contract.sh
 
 .PHONY: test-release
 test-release: ## Validate CI, GoReleaser, and Homebrew release config
@@ -93,7 +95,7 @@ test-release: ## Validate CI, GoReleaser, and Homebrew release config
 ##@ Build
 
 .PHONY: build
-build: build-mcp build-control ## Build both local binaries into dist/
+build: build-mcp build-control build-host ## Build local binaries into dist/
 
 .PHONY: build-mcp
 build-mcp: ## Build the MCP server binary
@@ -104,6 +106,11 @@ build-mcp: ## Build the MCP server binary
 build-control: ## Build the local control UI/TTS/perception binary
 	mkdir -p "$(DIST_DIR)"
 	cd "$(MCP_DIR)" && $(GO) build -ldflags "$(LDFLAGS)" -o "$(CONTROL_BIN)" ./cmd/tars-stackchan-control
+
+.PHONY: build-host
+build-host: ## Build the Mac host embodiment companion binary
+	mkdir -p "$(DIST_DIR)"
+	cd "$(MCP_DIR)" && $(GO) build -ldflags "$(LDFLAGS)" -o "$(HOST_BIN)" ./cmd/tars-stackchan-host
 
 .PHONY: clean
 clean: ## Remove local build artifacts
@@ -224,6 +231,14 @@ perceive-enroll: ## Enroll the local owner fingerprint, e.g. make perceive-enrol
 .PHONY: perceive-reset
 perceive-reset: ## Remove the local owner fingerprint
 	cd "$(MCP_DIR)" && $(GO) run ./cmd/tars-stackchan-control perceive enroll --reset
+
+.PHONY: host-serve
+host-serve: ## Run the Mac host embodiment perception companion
+	cd "$(MCP_DIR)" && $(GO) run ./cmd/tars-stackchan-host serve
+
+.PHONY: host-probe
+host-probe: ## Print Mac host embodiment tool/capability status
+	cd "$(MCP_DIR)" && $(GO) run ./cmd/tars-stackchan-host probe
 
 ##@ Firmware
 

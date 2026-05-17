@@ -265,6 +265,34 @@ TARS maps cognition `tars-body-action` blocks back to this MCP provider
 > lowest-risk unattended loop, run with `TARS_STACKCHAN_PERCEIVE_CAMERA=off`
 > and omit `vision` from the TARS provider capabilities.
 
+## Mac Host Body Provider
+
+`tars-stackchan-host` is a companion provider for running the embodiment loop
+without Stack-chan hardware. The default process is a stdio MCP server exposing
+`host_speak`; `serve` runs the Mac mic/camera perception loop and posts Percepts
+to TARS:
+
+```bash
+# Terminal 1: optional higher-quality speech path for afplay fallback
+TARS_STACKCHAN_TTS_TOKEN="$TARS_STACKCHAN_TOKEN" \
+make tts-serve
+
+# Terminal 2: host-only perception companion
+TARS_STACKCHAN_HOST_TARS_BASE_URL=http://127.0.0.1:43180 \
+TARS_STACKCHAN_HOST_PROVIDER=host \
+TARS_STACKCHAN_HOST_SESSION_ID=sess_main \
+TARS_STACKCHAN_HOST_OWNER=unknown \
+TARS_STACKCHAN_HOST_TTS_BASE_URL=http://127.0.0.1:18080 \
+TARS_STACKCHAN_HOST_TTS_TOKEN="$TARS_STACKCHAN_TOKEN" \
+make host-serve
+```
+
+Tool discovery is best-effort: `sox` or `ffmpeg` enables hearing,
+`imagesnap` or `ffmpeg` enables vision, and `say` or `afplay` plus the local
+TTS relay enables speech. Missing tools remove the matching capability instead
+of failing startup. For host-only TARS, configure `trigger_observations: true`
+unless you set `TARS_STACKCHAN_HOST_OWNER=owner`.
+
 For UI-only development without hardware:
 
 ```bash

@@ -51,11 +51,14 @@ test-release
 build
 build-mcp
 build-control
+build-host
 run-mcp
 run-mcp-http
 run-mcp-firmware
 run-control
 run-control-mock
+host-serve
+host-probe
 doctor
 doctor-http
 discover-base-url
@@ -86,6 +89,7 @@ assert_contains "$makefile" ".PHONY:"
 assert_contains "$makefile" "scripts/test/firmware-bridge-contract.sh"
 assert_contains "$makefile" "scripts/test/discover-base-url-contract.sh"
 assert_contains "$makefile" "scripts/test/tts-relay-go-contract.sh"
+assert_contains "$makefile" "scripts/test/hostbody-smoke-contract.sh"
 assert_contains "$makefile" "scripts/dev/discover-base-url.sh"
 assert_contains "$makefile" "scripts/dev/upload-firmware.sh"
 assert_contains "$makefile" "TARS_STACKCHAN_AUTO_BASE_URL"
@@ -99,6 +103,7 @@ assert_not_contains "$makefile" 'TARS_STACKCHAN_TOKEN="$(TARS_STACKCHAN_TOKEN)"'
 assert_contains "$makefile" "release --snapshot --clean"
 assert_contains "$makefile" "TARS_STACKCHAN_ENABLE_FIRMWARE_TOOLS=1"
 assert_contains "$makefile" "tools/list"
+assert_contains "$makefile" "tars-stackchan-host"
 
 for target in $required_targets; do
   if ! "$make_cmd" -C "$repo_root" -n "$target" >/dev/null; then
